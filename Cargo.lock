@@ -242,6 +242,7 @@ dependencies = [
 name = "aether-crypto-pq"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "fips203",
  "fips204",
  "serde",

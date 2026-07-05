@@ -226,7 +226,7 @@ The first implementation slice is intentionally split into standalone crates so 
 | --- | --- | --- |
 | Wire schema | `aether-agent-schema` | Implements crypto-agile signature envelopes, agent authorizations, step receipts, journal inclusion proofs, payment envelopes, typed BLAKE3 hashes, and JSON Schema export. |
 | Threshold approvals | `aether-crypto-threshold` | Verifies real FROST Ristretto255 guardian signatures for high-risk account-abstraction actions. |
-| PQ identity/transport readiness | `aether-crypto-pq` | Implements FIPS 204 ML-DSA-65/87 signing and verification plus FIPS 203 ML-KEM-768 encapsulation/decapsulation with fixed-size boundary validation. |
+| PQ identity/transport readiness | `aether-crypto-pq` | Implements FIPS 204 ML-DSA-65/87 signing and verification plus FIPS 203 ML-KEM-768 encapsulation/decapsulation with fixed-size boundary validation and Criterion benchmarks. |
 | SDK adoption | `aether-sdk::agent_identity` and `aether-sdk::agent_builder` | Provides hybrid Ed25519+ML-DSA-87 agent identity signing/verification and builders for authorization, receipt, and payment envelopes. |
 | Policy enforcement | `aether-account-abstraction` | Rejects high-risk `Send`, `Purchase`, and `Delete` operations unless the operation policy hash is FROST-approved by guardians. |
 | Settlement | `aether-program-agent-run-escrow` | Anchors run budgets, receipt hashes, journal roots, challenge windows, settlement, disputes, and refunds. |
@@ -245,10 +245,9 @@ That test set covers real ML-DSA/ML-KEM round trips, hybrid SDK identity proofs,
 
 Follow-up PRs should keep the same boundary discipline:
 
-1. Add benchmark targets for ML-DSA-65/87 and ML-KEM-768 before enabling PQ verification in any runtime hot path.
-2. Add multi-language bridge conformance fixtures for beater.js, tempo, beatbox, and beater.
-3. Add benchmark targets for journal proof generation and verification at agent-run sizes expected from production traces.
-4. Add cleanup PRs that remove stale/generated files and unused modules separately from crypto behavior changes.
+1. Add multi-language bridge conformance fixtures for beater.js, tempo, beatbox, and beater.
+2. Add benchmark targets for journal proof generation and verification at agent-run sizes expected from production traces.
+3. Add cleanup PRs that remove stale/generated files and unused modules separately from crypto behavior changes.
 
 ## What not to do
 

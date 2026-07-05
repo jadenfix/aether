@@ -14,3 +14,10 @@ fips203 = { version = "0.4.3", default-features = false, features = ["default-rn
 fips204 = { version = "0.4.6", default-features = false, features = ["default-rng", "ml-dsa-65", "ml-dsa-87"] }
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "pq_bench"
+harness = false
