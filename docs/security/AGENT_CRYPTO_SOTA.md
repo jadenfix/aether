@@ -218,6 +218,38 @@ The journal root should be a Merkle Mountain Range or append-only Merkle tree ov
 6. Add bridge conformance tests with beater.js, tempo, beatbox, and beater.
 7. Add audit gates for canonical encoding, domain separation, replay resistance, nonce handling, and key lifecycle.
 
+### Current implementation map
+
+The first implementation slice is intentionally split into standalone crates so other ecosystem repos can adopt the agent crypto layer without linking the full node:
+
+| Boundary | Crate/API | Current status |
+| --- | --- | --- |
+| Wire schema | `aether-agent-schema` | Implements crypto-agile signature envelopes, agent authorizations, step receipts, payment envelopes, typed BLAKE3 hashes, and JSON Schema export. |
+| Threshold approvals | `aether-crypto-threshold` | Verifies real FROST Ristretto255 guardian signatures for high-risk account-abstraction actions. |
+| PQ identity/transport readiness | `aether-crypto-pq` | Implements FIPS 204 ML-DSA-65/87 signing and verification plus FIPS 203 ML-KEM-768 encapsulation/decapsulation with fixed-size boundary validation. |
+| SDK adoption | `aether-sdk::agent_identity` and `aether-sdk::agent_builder` | Provides hybrid Ed25519+ML-DSA-87 agent identity signing/verification and builders for authorization, receipt, and payment envelopes. |
+| Policy enforcement | `aether-account-abstraction` | Rejects high-risk `Send`, `Purchase`, and `Delete` operations unless the operation policy hash is FROST-approved by guardians. |
+| Settlement | `aether-program-agent-run-escrow` | Anchors run budgets, receipt hashes, journal roots, challenge windows, settlement, disputes, and refunds. |
+
+The focused e2e gate today is:
+
+```text
+cargo test -p aether-crypto-pq \
+  -p aether-agent-schema \
+  -p aether-account-abstraction \
+  -p aether-sdk \
+  -p aether-program-agent-run-escrow
+```
+
+That test set covers real ML-DSA/ML-KEM round trips, hybrid SDK identity proofs, FROST guardian verification, payment/side-effect binding, and an SDK -> account abstraction -> escrow settlement flow.
+
+Follow-up PRs should keep the same boundary discipline:
+
+1. Add benchmark targets for ML-DSA-65/87 and ML-KEM-768 before enabling PQ verification in any runtime hot path.
+2. Add Merkle/MMR journal inclusion proofs for receipt chains.
+3. Add bridge conformance fixtures for beater.js, tempo, beatbox, and beater.
+4. Add cleanup PRs that remove stale/generated files and unused modules separately from crypto behavior changes.
+
 ## What not to do
 
 - Do not replace all signatures with PQ signatures immediately. That would harm latency and light-client ergonomics before there is a measured threat/benefit tradeoff.

@@ -710,6 +710,7 @@ version = "0.1.0"
 dependencies = [
  "aether-account-abstraction",
  "aether-agent-schema",
+ "aether-crypto-pq",
  "aether-crypto-primitives",
  "aether-program-agent-run-escrow",
  "aether-types",

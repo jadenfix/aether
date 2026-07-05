@@ -18,6 +18,7 @@ hex = "0.4"
 aether-types = { path = "../../types" }
 aether-agent-schema = { path = "../../agent-schema" }
 aether-crypto-primitives = { path = "../../crypto/primitives" }
+aether-crypto-pq = { path = "../../crypto/pq" }
 
 [dev-dependencies]
 aether-account-abstraction = { path = "../../programs/account-abstraction" }

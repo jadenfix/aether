@@ -62,6 +62,16 @@ pub enum PqSignatureAlgorithm {
     MlDsa87,
 }
 
+impl PqSignatureAlgorithm {
+    #[must_use]
+    pub const fn context_label(self) -> &'static str {
+        match self {
+            PqSignatureAlgorithm::MlDsa65 => "ml-dsa-65",
+            PqSignatureAlgorithm::MlDsa87 => "ml-dsa-87",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PqKemAlgorithm {
@@ -150,7 +160,16 @@ pub struct MlKem768Encapsulation {
 
 #[must_use]
 pub fn pq_signature_context(domain: &str, chain_id: u64) -> Vec<u8> {
-    format!("aether/{domain}/chain/{chain_id}/ml-dsa-65").into_bytes()
+    pq_signature_context_for_alg(domain, chain_id, PqSignatureAlgorithm::MlDsa65)
+}
+
+#[must_use]
+pub fn pq_signature_context_for_alg(
+    domain: &str,
+    chain_id: u64,
+    alg: PqSignatureAlgorithm,
+) -> Vec<u8> {
+    format!("aether/{domain}/chain/{chain_id}/{}", alg.context_label()).into_bytes()
 }
 
 pub fn generate_ml_dsa65_keypair() -> Result<MlDsa65Keypair, PqCryptoError> {
@@ -367,7 +386,11 @@ mod tests {
     #[test]
     fn ml_dsa87_signs_and_verifies_long_lived_identity() {
         let keypair = generate_ml_dsa87_keypair().unwrap();
-        let context = pq_signature_context("long_lived_agent_identity", 1);
+        let context = pq_signature_context_for_alg(
+            "long_lived_agent_identity",
+            1,
+            PqSignatureAlgorithm::MlDsa87,
+        );
         let message = b"aether long-lived guardian identity transcript";
 
         let envelope = sign_ml_dsa87(&keypair.private_key, &context, message).unwrap();
