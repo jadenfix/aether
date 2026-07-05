@@ -207,3 +207,10 @@ Contributions are welcome across the entire stack -- protocol, tooling, AI mesh,
 ## License
 
 MIT License -- Copyright (c) 2026 Aether Foundation. See [LICENSE](LICENSE) for details.
+
+## Ecosystem
+
+Aether is part of the [ecosystem](https://github.com/jadenfix/ecosystem) — a family of Rust-first projects for the agent era. It is fully standalone: a complete L1 with its own consensus, runtime, ledger, SDKs, and tooling, adopted on its own merits. Within the family it is the frontier settlement layer, with potential connections for:
+
+- verifiable compute and settlement for agent economies built on the sibling runtimes
+- on-chain anchoring of [beaterOS](https://github.com/jadenfix/beaterOS) receipts and [beater](https://github.com/jadenfix/beater) attestations via its TEE + VCR verification lane
