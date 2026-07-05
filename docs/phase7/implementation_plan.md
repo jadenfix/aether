@@ -68,7 +68,7 @@ This document captures the implementation breakdown for the remaining Phase 7 de
    - Build/test the TypeScript workspace (`pnpm install && pnpm test`).
    - Execute faucet + scorecard unit tests (`cargo test -p aether-faucet`, `cargo test -p aether-scorecard`).
 2. Split caches to respect new Node workspace directories.
-3. Expand documentation (`README.md`, `progress.md`) to mark Phase 7 as feature-complete once these tasks are merged.
+3. Expand documentation (`README.md`, `IMPLEMENTATION_ROADMAP.md`) to mark Phase 7 as feature-complete once these tasks are merged.
 
 ---
 

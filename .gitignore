@@ -61,3 +61,5 @@ venv/
 *.tfstate
 *.tfstate.backup
 .claude/worktrees/
+.claude/settings.local.json
+com.*.claude-runner.plist

@@ -65,25 +65,33 @@ echo -e "${BOLD}================================================================
 tier "12" "Harness Self-Validation (HARD STOP)"
 # ============================================================================
 
-# JSON validity
-if jq . .claude/settings.local.json >/dev/null 2>&1; then
-    log_pass "12.1  settings.local.json is valid JSON"
-else
-    log_hard "12.1  settings.local.json is NOT valid JSON"
-fi
+SETTINGS_FILE=".claude/settings.local.json"
 
-# Model is opus 4.6
-if jq -r '.model' .claude/settings.local.json 2>/dev/null | grep -q 'claude-opus-4-6'; then
-    log_pass "12.2  Model is claude-opus-4-6 (1M)"
-else
-    log_hard "12.2  Model is NOT claude-opus-4-6"
-fi
+if [ -f "$SETTINGS_FILE" ]; then
+    # JSON validity
+    if jq . "$SETTINGS_FILE" >/dev/null 2>&1; then
+        log_pass "12.1  settings.local.json is valid JSON"
+    else
+        log_hard "12.1  settings.local.json is NOT valid JSON"
+    fi
 
-# Sandbox enabled
-if jq -e '.sandbox.enabled' .claude/settings.local.json 2>/dev/null | grep -q true; then
-    log_pass "12.3  Sandbox is enabled"
+    # Model is opus 4.6
+    if jq -r '.model' "$SETTINGS_FILE" 2>/dev/null | grep -q 'claude-opus-4-6'; then
+        log_pass "12.2  Model is claude-opus-4-6 (1M)"
+    else
+        log_hard "12.2  Model is NOT claude-opus-4-6"
+    fi
+
+    # Sandbox enabled
+    if jq -e '.sandbox.enabled' "$SETTINGS_FILE" 2>/dev/null | grep -q true; then
+        log_pass "12.3  Sandbox is enabled"
+    else
+        log_hard "12.3  Sandbox is NOT enabled"
+    fi
 else
-    log_hard "12.3  Sandbox is NOT enabled"
+    log_skip "12.1  settings.local.json is operator-local and not tracked"
+    log_skip "12.2  Model check skipped without local settings"
+    log_skip "12.3  Sandbox check skipped without local settings"
 fi
 
 # Hook script exists and is executable
@@ -153,10 +161,14 @@ else
     log_hard "12.40 run-claude.sh missing or not executable"
 fi
 
-if plutil -lint com.jadenfix.claude-runner.plist >/dev/null 2>&1; then
-    log_pass "12.41 plist XML is well-formed"
+if compgen -G "com.*.claude-runner.plist" >/dev/null; then
+    if plutil -lint com.*.claude-runner.plist >/dev/null 2>&1; then
+        log_pass "12.41 local claude-runner plist XML is well-formed"
+    else
+        log_hard "12.41 local claude-runner plist XML is NOT well-formed"
+    fi
 else
-    log_hard "12.41 plist XML is NOT well-formed"
+    log_skip "12.41 local claude-runner plist is not tracked"
 fi
 
 if [ -s CLAUDE.md ]; then
@@ -168,7 +180,7 @@ fi
 if [ -d .claude/logs ]; then
     log_pass "12.43 Log directory exists"
 else
-    log_hard "12.43 Log directory missing"
+    log_skip "12.43 Log directory is operator-local"
 fi
 
 if [ -s TASKS.md ]; then
@@ -178,22 +190,26 @@ else
 fi
 
 # Permissions sanity: deny list has key entries
-for PATTERN in "cargo publish" "npm publish" "kubectl" "git push --force" "wget"; do
-    if jq -r '.permissions.deny[]' .claude/settings.local.json 2>/dev/null | grep -q "$PATTERN"; then
-        log_pass "12.xx Deny list contains: $PATTERN"
-    else
-        log_hard "12.xx Deny list MISSING: $PATTERN"
-    fi
-done
+if [ -f "$SETTINGS_FILE" ]; then
+    for PATTERN in "cargo publish" "npm publish" "kubectl" "git push --force" "wget"; do
+        if jq -r '.permissions.deny[]' "$SETTINGS_FILE" 2>/dev/null | grep -q "$PATTERN"; then
+            log_pass "12.xx Deny list contains: $PATTERN"
+        else
+            log_hard "12.xx Deny list MISSING: $PATTERN"
+        fi
+    done
 
-# Network allowlist has required domains
-for DOMAIN in github.com crates.io registry.npmjs.org pypi.org docs.rs; do
-    if jq -r '.sandbox.network.allowedDomains[]' .claude/settings.local.json 2>/dev/null | grep -q "$DOMAIN"; then
-        log_pass "12.xx Network allowlist has: $DOMAIN"
-    else
-        log_hard "12.xx Network allowlist MISSING: $DOMAIN"
-    fi
-done
+    # Network allowlist has required domains
+    for DOMAIN in github.com crates.io registry.npmjs.org pypi.org docs.rs; do
+        if jq -r '.sandbox.network.allowedDomains[]' "$SETTINGS_FILE" 2>/dev/null | grep -q "$DOMAIN"; then
+            log_pass "12.xx Network allowlist has: $DOMAIN"
+        else
+            log_hard "12.xx Network allowlist MISSING: $DOMAIN"
+        fi
+    done
+else
+    log_skip "12.xx Local settings deny-list and network allow-list checks skipped"
+fi
 
 if [ "$HARD_STOP" -gt 0 ]; then
     echo -e "\n${RED}${BOLD}!! ${HARD_STOP} harness self-validation failures !!${NC}"

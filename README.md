@@ -197,6 +197,7 @@ cargo run -p aether-cli --bin aetherctl -- --help
 | [Getting Started](GETTING_STARTED.md) | Contributor bootstrap and local workflows |
 | [Contributing](CONTRIBUTING.md) | PR standards and validation flow |
 | [Security](docs/security/AUDIT_SCOPE.md) | Audit scope and security model |
+| [Agent Settlement](docs/ecosystem/aether-agent-settlement.md) | Beater ecosystem compatibility design |
 | [Runbooks](docs/ops/RUNBOOKS.md) | Operational procedures |
 | [Roadmap](IMPLEMENTATION_ROADMAP.md) | Delivery plan and milestones |
 

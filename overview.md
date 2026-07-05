@@ -65,6 +65,6 @@ What it does not do yet is automated release publishing or automated production 
 1. `README.md` for the project summary and quick start.
 2. `GETTING_STARTED.md` for setup and local workflows.
 3. `docs/architecture.md` for the system design.
-4. `progress.md` for the current repository status.
-5. `IMPLEMENTATION_ROADMAP.md` and `trm.md` for the planned delivery path.
+4. `IMPLEMENTATION_ROADMAP.md` and `trm.md` for the planned delivery path.
+5. `docs/ecosystem/aether-agent-settlement.md` for Beater ecosystem settlement compatibility.
 6. `docs/ops/RUNBOOKS.md` and `docs/security/` for operational and audit context.
