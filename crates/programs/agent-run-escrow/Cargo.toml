@@ -1,0 +1,16 @@
+[package]
+name = "aether-program-agent-run-escrow"
+version.workspace = true
+edition.workspace = true
+description = "Agent run escrow program for AIC settlement, receipt anchoring, disputes, and refunds"
+categories = ["cryptography::cryptocurrencies"]
+keywords = ["aether", "escrow", "agents", "aic"]
+
+[dependencies]
+aether-agent-schema = { path = "../../agent-schema" }
+aether-types = { path = "../../types" }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true }

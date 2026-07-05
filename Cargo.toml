@@ -65,6 +65,7 @@ members = [
     "crates/programs/governance",
     "crates/programs/amm",
     "crates/programs/job-escrow",
+    "crates/programs/agent-run-escrow",
     "crates/programs/reputation",
     "crates/programs/aic-token",
     

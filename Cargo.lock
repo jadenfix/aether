@@ -511,6 +511,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-program-agent-run-escrow"
+version = "0.1.0"
+dependencies = [
+ "aether-agent-schema",
+ "aether-types",
+ "proptest",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "aether-program-aic-token"
 version = "0.1.0"
 dependencies = [
