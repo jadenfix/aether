@@ -1,0 +1,111 @@
+---
+name: review-pr
+description: High-recall, high-precision independent review of an aether PR. Use when asked to review a PR in jadenfix/aether (e.g. "/review-pr 400"). Reviews must be done by an agent that did NOT author the PR.
+---
+
+# aether PR review
+
+You are an independent, non-author reviewer for `jadenfix/aether`. The argument is a PR number: `$ARGUMENTS`. aether is an L1 blockchain: a consensus split, a nondeterministic state transition, or value non-conservation is not a bug — it is the end of the chain. Review at that stakes level. This rubric teaches you *how* to find bugs on any PR; it is deliberately not a list of past bugs to grep for.
+
+## Ground rules
+
+- **Non-author only.** Check `gh pr view <N> -R jadenfix/aether --json commits -q '.commits[].messageHeadline'` — if you recognize any commit as your own work from this session, stop and hand the review to another agent.
+- Read-only: do not modify the main clone, do not run `cargo` or `scripts/test.sh` in a directory another agent may be building in. CI already builds per-PR; review by reading.
+- Precision: every **blocker** carries a concrete traced failure scenario (specific input/state → specific wrong behavior, with `file:line`). If you cannot trace one, it is a nit.
+- Recall: read the ENTIRE diff, the referenced issues, and the surrounding code of every touched file at current `main`. Bugs live at the seams the diff doesn't show — across 47 crates, the seams dominate.
+
+## Procedure
+
+1. `gh pr view <N> -R jadenfix/aether --json title,body,author,files,mergeStateStatus,statusCheckRollup`
+2. `gh pr diff <N> -R jadenfix/aether` — all of it.
+3. `gh issue view <issue> -R jadenfix/aether` for every referenced issue; the issue defines the intended scope.
+4. **Supersession check:** `git log origin/main --oneline -30` plus targeted `git log -p` on touched files → REJECT (superseded) if main already contains an equivalent fix.
+5. **Freshness check:** after any wait, force-push, PR body edit, or CI rerun, re-read PR state, head SHA, base SHA, check rollup, and linked issue state.
+6. **Overlap check:** `gh pr list -R jadenfix/aether --state open` — flag open PRs touching the same paths and whether merge order matters.
+7. Hunt for bugs using the method below.
+8. Post the review (format at the bottom) and return a structured verdict.
+
+## How to find bugs (do this — don't just tick boxes)
+
+- **Trace one path end to end.** Follow one transaction from mempool admission through scheduling, execution, state commit, and finality vote — into the conflict, revert, timeout, and equivocation branches, not just the happy path.
+- **Review from three seats.** aether serves a **validator** (safety under faults and partitions; can this change make two honest nodes commit different blocks or one honest node get slashed?), an **adversarial peer** (every gossip message, block, vote, shred, and RPC call is attacker-chosen bytes), and a **contract developer / token holder** (deterministic execution, conserved value, honest fees). For the code in the diff, ask how it hurts each of the three.
+- **Enumerate failure modes** for every new input, call, or state transition: empty · malformed · oversized · slow/hung · repeated/retried · concurrent · out-of-order · partial failure · adversarial/untrusted — plus blockchain-specific: equivocating · replayed-across-forks · fee-griefing · censorship-inducing.
+- **Follow the seams the diff hides:** callers of changed signatures, callees now leaned on, invariants elsewhere that assumed the old behavior.
+- **Reverted-fix test:** would any test in the PR still pass if the fix were reverted? If yes, it proves nothing — a blocker for a bugfix PR.
+- **Adversarially verify** each candidate blocker: try to refute it against the code. Survives → blocker. No concrete trace → nit.
+- **Preserve durable lessons** under `Durable guidance`; a follow-up author lands accepted guidance in this file from a separate PR.
+
+## What to look for (general bug classes)
+
+Correctness & honesty of the contract:
+- [ ] Return values and RPC responses tell the caller the truth — a failed or partially-applied operation is never reported as success; finality status is never overstated (executed ≠ finalized).
+- [ ] Docs and declared schemas (RPC, SDKs, explorer) match runtime behavior in the same PR.
+
+Resource, lifecycle & availability:
+- [ ] Every network round-trip has a timeout and recovery path; cleanup runs on all exit paths.
+- [ ] Locks are narrow and never held across `.await`; consensus-critical tasks must not starve behind RPC or gossip load.
+
+Tests:
+- [ ] Tests exercise the actual failure mode (survive the reverted-fix question); every cap and threshold tested at, below, above the boundary.
+
+Fit & simplicity:
+- [ ] The change does exactly what its issue needs — no speculative abstraction, dead branch, or unused knob; crate-layer direction respected across the workspace.
+
+## aether-specific bug classes (check every one the diff touches)
+
+Determinism (absolute — a divergence is a consensus split):
+- [ ] Nothing host-dependent in the state-transition path: no wall-clock reads, OS randomness, floating point, `HashMap`/`HashSet` iteration order, pointer/allocation-order dependence, or locale/platform-varying behavior. Time and randomness enter only as consensus-provided inputs (block time, VRF output).
+- [ ] Parallel WASM scheduling commutes: any R/W-set-legal execution order produces the state a serial execution would. Widened/narrowed R/W set declarations are conservative — an under-declared write set is a determinism blocker.
+- [ ] Wasmtime/runtime config changes (feature flags, fuel metering, NaN canonicalization) are evaluated for cross-node reproducibility, and gas/fuel charging is itself deterministic.
+
+Consensus safety (safety > liveness):
+- [ ] Changes to vote, lock, quorum, view-change, or VRF-leader logic carry an explicit safety argument in the PR; two honest nodes must never finalize conflicting blocks under ≤ f faults.
+- [ ] Equivocation and slashing conditions cannot be triggered against honest nodes by network conditions (delays, reordering, replay); evidence handling validates before punishing.
+- [ ] BLS aggregation/verification changes preserve exactly-the-signers semantics — no rogue-key or duplicate-signer acceptance.
+
+Value conservation & ledger rules (eUTxO++):
+- [ ] No path creates or destroys value outside protocol rules: sum(inputs) = sum(outputs) + fees (+ protocol mint/burn only where specified); double-spend prevention holds across forks and mempool re-admission.
+- [ ] All amount/fee arithmetic is checked (overflow, underflow, rounding direction is specified and consistent); dual-token accounting cannot cross-contaminate.
+- [ ] Sparse Merkle state root reflects exactly the committed writes; proofs are verified, never trusted from a peer.
+
+Adversarial P2P & DA (attacker-chosen bytes):
+- [ ] Every gossip/turbine/RPC input is size-bounded and validated BEFORE allocation or expensive work (signature checks before decode-heavy paths where possible); malformed input can never panic a node — `unwrap`/`expect`/indexing on network-derived data in node crates is a blocker.
+- [ ] Per-peer rate/score limits bound what one peer can make a node do (CPU, memory, disk, response amplification); erasure-coding reconstruction handles adversarial shred combinations.
+- [ ] Fork-choice and sync cannot be wedged by withheld or contradictory data — a peer that lies about availability degrades that peer, not the node.
+
+TEE/VCR AI-verification lane:
+- [ ] Attestations are verified against expected measurements, never self-reported; a failed or absent attestation fails closed. Verification results entering consensus are deterministic facts (signed artifacts), not re-computed nondeterministically per node.
+
+## Verdict & posting
+
+Post exactly one review:
+
+```
+gh pr review <N> -R jadenfix/aether --comment --body "<body>"
+```
+
+Body format — first line is the verdict, nothing above it:
+
+```
+VERDICT: APPROVE | REQUEST-CHANGES | REJECT (superseded | wrong-approach)
+
+<one-paragraph summary: what the PR does, whether it fixes the traced failure>
+
+Blockers:
+- <file:line — traced failure scenario>   (or "none")
+
+Nits:
+- <file:line — suggestion>                (or "none")
+
+Durable guidance: <candidate reusable invariant for follow-up docs, or "none">
+
+Overlap: <open PRs touching same paths + merge-order note, or "none">
+
+— independent review agent (non-author)
+```
+
+APPROVE only with zero blockers. REQUEST-CHANGES when fixable blockers exist. REJECT when superseded or the approach is unsound for consensus. Do not merge — merging is the coordinator's job after CI + mergeability recheck.
+
+## Deep mode (optional)
+
+If asked for a "deep" review, fan out three parallel non-author subagents with distinct lenses — (a) determinism/consensus safety, (b) adversarial-input robustness, (c) economics/value conservation — then adversarially verify each candidate blocker yourself before posting.
