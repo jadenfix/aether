@@ -17,6 +17,7 @@ pub fn agent_contract_schema() -> Value {
             "signatureEnvelope": { "$ref": "#/$defs/SignatureEnvelope" },
             "agentAuthorization": { "$ref": "#/$defs/AgentAuthorization" },
             "stepReceipt": { "$ref": "#/$defs/StepReceipt" },
+            "journalProof": { "$ref": "#/$defs/JournalProof" },
             "paymentEnvelope": { "$ref": "#/$defs/PaymentEnvelope" }
         },
         "$defs": {
@@ -57,6 +58,10 @@ pub fn agent_contract_schema() -> Value {
             "PaymentToken": {
                 "type": "string",
                 "enum": ["aic", "swr"]
+            },
+            "MerkleSide": {
+                "type": "string",
+                "enum": ["left", "right"]
             },
             "AgentRunId": {
                 "$ref": "#/$defs/H256"
@@ -162,6 +167,29 @@ pub fn agent_contract_schema() -> Value {
                     "signature": { "$ref": "#/$defs/SignatureEnvelope" }
                 }
             },
+            "JournalProofNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["side", "hash"],
+                "properties": {
+                    "side": { "$ref": "#/$defs/MerkleSide" },
+                    "hash": { "$ref": "#/$defs/H256" }
+                }
+            },
+            "JournalProof": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["leaf_hash", "leaf_index", "leaf_count", "siblings"],
+                "properties": {
+                    "leaf_hash": { "$ref": "#/$defs/H256" },
+                    "leaf_index": { "type": "integer", "minimum": 0 },
+                    "leaf_count": { "type": "integer", "minimum": 1 },
+                    "siblings": {
+                        "type": "array",
+                        "items": { "$ref": "#/$defs/JournalProofNode" }
+                    }
+                }
+            },
             "PaymentEnvelope": {
                 "type": "object",
                 "additionalProperties": false,
@@ -218,6 +246,7 @@ mod tests {
             "SignatureEnvelope",
             "AgentAuthorization",
             "StepReceipt",
+            "JournalProof",
             "PaymentEnvelope",
             "SideEffect",
             "StepKind",

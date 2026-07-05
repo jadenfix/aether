@@ -35,7 +35,8 @@ pub mod transaction_builder;
 pub mod types;
 
 pub use aether_agent_schema::{
-    AgentAuthorization, AgentRunId, JournalRoot, PaymentEnvelope, PaymentToken, RunStatus,
+    journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentRunId, JournalProof,
+    JournalProofNode, JournalRoot, MerkleSide, PaymentEnvelope, PaymentToken, RunStatus,
     SettlementPolicy, SideEffect, SignatureEnvelope, SigningAlgorithm, StepKind, StepReceipt,
 };
 pub use aether_crypto_pq::{

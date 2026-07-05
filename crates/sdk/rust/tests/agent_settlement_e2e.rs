@@ -1,9 +1,9 @@
 use aether_account_abstraction::{AccountValidator, EntryPoint, UserOperation};
 use aether_program_agent_run_escrow::AgentRunEscrowState;
 use aether_sdk::{
-    AgentAuthorization, AgentAuthorizationBuilder, AgentRunId, JournalRoot, PaymentEnvelopeBuilder,
-    SettlementPolicy, SideEffect, SignatureEnvelope, SignatureEnvelopeBuilder, SigningAlgorithm,
-    StepKind, StepReceiptBuilder,
+    journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentAuthorizationBuilder,
+    AgentRunId, JournalRoot, PaymentEnvelopeBuilder, SettlementPolicy, SideEffect,
+    SignatureEnvelope, SignatureEnvelopeBuilder, SigningAlgorithm, StepKind, StepReceiptBuilder,
 };
 use aether_types::{Address, H256};
 use anyhow::Result;
@@ -207,6 +207,9 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
         .build()
         .unwrap();
     let receipt_hash = receipt.receipt_hash().unwrap();
+    let journal_root = journal_root_from_receipt_hashes(&[receipt_hash]).unwrap();
+    let inclusion_proof = journal_proof(&[receipt_hash], 0).unwrap();
+    inclusion_proof.verify(journal_root).unwrap();
 
     let mut escrow = AgentRunEscrowState::new();
     let policy = SettlementPolicy {
@@ -237,7 +240,7 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
         )
         .unwrap();
     escrow
-        .close_run(run_id, provider, JournalRoot(h(19)), h(20), 12)
+        .close_run(run_id, provider, journal_root, h(20), 12)
         .unwrap();
 
     assert!(matches!(

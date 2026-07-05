@@ -49,6 +49,12 @@ pub enum AgentSchemaError {
     InvalidReceiptSequence,
     #[error("tool identity must not be empty")]
     EmptyToolIdentity,
+    #[error("journal must contain at least one receipt hash")]
+    EmptyJournal,
+    #[error("journal leaf index is out of bounds")]
+    InvalidJournalLeafIndex,
+    #[error("journal proof does not match the expected root")]
+    InvalidJournalProof,
     #[error("serialization failed: {0}")]
     Serialization(String),
 }
@@ -181,6 +187,49 @@ impl AgentRunId {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JournalRoot(pub H256);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MerkleSide {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JournalProofNode {
+    pub side: MerkleSide,
+    pub hash: H256,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JournalProof {
+    pub leaf_hash: H256,
+    pub leaf_index: u64,
+    pub leaf_count: u64,
+    pub siblings: Vec<JournalProofNode>,
+}
+
+impl JournalProof {
+    pub fn verify(&self, root: JournalRoot) -> Result<(), AgentSchemaError> {
+        if self.leaf_count == 0 || self.leaf_index >= self.leaf_count {
+            return Err(AgentSchemaError::InvalidJournalLeafIndex);
+        }
+
+        let mut hash = self.leaf_hash;
+        for sibling in &self.siblings {
+            hash = match sibling.side {
+                MerkleSide::Left => journal_node_hash(sibling.hash, hash),
+                MerkleSide::Right => journal_node_hash(hash, sibling.hash),
+            };
+        }
+
+        if hash == root.0 {
+            Ok(())
+        } else {
+            Err(AgentSchemaError::InvalidJournalProof)
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettlementPolicy {
@@ -337,6 +386,87 @@ pub fn typed_hash<T: Serialize>(domain: &str, value: &T) -> Result<H256, AgentSc
     Ok(H256::from(out))
 }
 
+pub fn journal_root_from_receipt_hashes(
+    receipt_hashes: &[H256],
+) -> Result<JournalRoot, AgentSchemaError> {
+    if receipt_hashes.is_empty() {
+        return Err(AgentSchemaError::EmptyJournal);
+    }
+    Ok(JournalRoot(journal_root_hash(receipt_hashes)))
+}
+
+pub fn journal_proof(
+    receipt_hashes: &[H256],
+    leaf_index: usize,
+) -> Result<JournalProof, AgentSchemaError> {
+    if receipt_hashes.is_empty() {
+        return Err(AgentSchemaError::EmptyJournal);
+    }
+    if leaf_index >= receipt_hashes.len() {
+        return Err(AgentSchemaError::InvalidJournalLeafIndex);
+    }
+
+    let mut level = receipt_hashes.to_vec();
+    let mut index = leaf_index;
+    let mut siblings = Vec::new();
+
+    while level.len() > 1 {
+        let sibling_index = if index % 2 == 0 {
+            (index + 1).min(level.len() - 1)
+        } else {
+            index - 1
+        };
+        siblings.push(JournalProofNode {
+            side: if index % 2 == 0 {
+                MerkleSide::Right
+            } else {
+                MerkleSide::Left
+            },
+            hash: level[sibling_index],
+        });
+
+        level = journal_next_level(&level);
+        index /= 2;
+    }
+
+    Ok(JournalProof {
+        leaf_hash: receipt_hashes[leaf_index],
+        leaf_index: leaf_index as u64,
+        leaf_count: receipt_hashes.len() as u64,
+        siblings,
+    })
+}
+
+fn journal_root_hash(receipt_hashes: &[H256]) -> H256 {
+    let mut level = receipt_hashes.to_vec();
+    while level.len() > 1 {
+        level = journal_next_level(&level);
+    }
+    level[0]
+}
+
+fn journal_next_level(level: &[H256]) -> Vec<H256> {
+    level
+        .chunks(2)
+        .map(|pair| {
+            let left = pair[0];
+            let right = pair.get(1).copied().unwrap_or(left);
+            journal_node_hash(left, right)
+        })
+        .collect()
+}
+
+fn journal_node_hash(left: H256, right: H256) -> H256 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"aether/agent_journal_node/v1");
+    hasher.update(&[0]);
+    hasher.update(left.as_bytes());
+    hasher.update(right.as_bytes());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(hasher.finalize().as_bytes());
+    H256::from(out)
+}
+
 fn validate_domain(domain: &str) -> Result<(), AgentSchemaError> {
     if !domain.starts_with(DOMAIN_PREFIX) {
         return Err(AgentSchemaError::InvalidDomain);
@@ -472,6 +602,50 @@ mod tests {
         assert_eq!(
             payment.validate(20),
             Err(AgentSchemaError::MissingResultBinding)
+        );
+    }
+
+    #[test]
+    fn journal_proof_verifies_receipt_inclusion() {
+        let leaves = [h(1), h(2), h(3), h(4), h(5)];
+        let root = journal_root_from_receipt_hashes(&leaves).unwrap();
+
+        for index in 0..leaves.len() {
+            let proof = journal_proof(&leaves, index).unwrap();
+            assert_eq!(proof.leaf_hash, leaves[index]);
+            proof.verify(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn journal_proof_rejects_tampered_leaf_or_root() {
+        let leaves = [h(1), h(2), h(3)];
+        let root = journal_root_from_receipt_hashes(&leaves).unwrap();
+        let mut proof = journal_proof(&leaves, 1).unwrap();
+
+        proof.leaf_hash = h(9);
+        assert_eq!(
+            proof.verify(root),
+            Err(AgentSchemaError::InvalidJournalProof)
+        );
+
+        let proof = journal_proof(&leaves, 1).unwrap();
+        assert_eq!(
+            proof.verify(JournalRoot(h(9))),
+            Err(AgentSchemaError::InvalidJournalProof)
+        );
+    }
+
+    #[test]
+    fn journal_root_requires_non_empty_receipts() {
+        assert_eq!(
+            journal_root_from_receipt_hashes(&[]),
+            Err(AgentSchemaError::EmptyJournal)
+        );
+        assert_eq!(journal_proof(&[], 0), Err(AgentSchemaError::EmptyJournal));
+        assert_eq!(
+            journal_proof(&[h(1)], 1),
+            Err(AgentSchemaError::InvalidJournalLeafIndex)
         );
     }
 
