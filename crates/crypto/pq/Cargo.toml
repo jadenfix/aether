@@ -11,7 +11,6 @@ keywords = ["aether", "post-quantum", "ml-dsa", "ml-kem", "agent"]
 
 [dependencies]
 fips203 = { version = "0.4.3", default-features = false, features = ["default-rng", "ml-kem-768"] }
-fips204 = { version = "0.4.6", default-features = false, features = ["default-rng", "ml-dsa-65"] }
+fips204 = { version = "0.4.6", default-features = false, features = ["default-rng", "ml-dsa-65", "ml-dsa-87"] }
 serde.workspace = true
 thiserror.workspace = true
-
