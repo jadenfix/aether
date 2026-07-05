@@ -53,6 +53,7 @@ members = [
     "crates/crypto/vrf",
     "crates/crypto/bls",
     "crates/crypto/threshold",
+    "crates/crypto/pq",
     "crates/crypto/kes",
     "crates/crypto/kzg",
     

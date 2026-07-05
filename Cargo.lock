@@ -239,6 +239,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-crypto-pq"
+version = "0.1.0"
+dependencies = [
+ "fips203",
+ "fips204",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "aether-crypto-primitives"
 version = "0.1.0"
 dependencies = [
@@ -698,13 +708,17 @@ dependencies = [
 name = "aether-sdk"
 version = "0.1.0"
 dependencies = [
+ "aether-account-abstraction",
  "aether-agent-schema",
  "aether-crypto-primitives",
+ "aether-program-agent-run-escrow",
  "aether-types",
  "anyhow",
  "bincode",
+ "frost-ristretto255",
  "hex",
  "proptest",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -2140,6 +2154,30 @@ name = "find-msvc-tools"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52051878f80a721bb68ebfbc930e07b65ba72f2da88968ea5c06fd6ca3d3a127"
+
+[[package]]
+name = "fips203"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8bdb6454f692ca2a2b45cd554c6828c639d7f9c968cf83a678899ec4443a280"
+dependencies = [
+ "rand_core 0.6.4",
+ "sha3",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "fips204"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9fb5a367b9846933e271a3c2a992930743f82ae5e8cb7faa780715a80fa0b15"
+dependencies = [
+ "rand_core 0.6.4",
+ "sha2",
+ "sha3",
+ "zeroize",
+]
 
 [[package]]
 name = "float-cmp"
@@ -5206,6 +5244,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "sha3"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
+dependencies = [
+ "digest",
+ "keccak",
 ]
 
 [[package]]

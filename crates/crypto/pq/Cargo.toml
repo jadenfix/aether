@@ -1,0 +1,17 @@
+[package]
+name = "aether-crypto-pq"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+description = "Post-quantum ML-DSA and ML-KEM wrappers for Aether agent crypto"
+keywords = ["aether", "post-quantum", "ml-dsa", "ml-kem", "agent"]
+
+[dependencies]
+fips203 = { version = "0.4.3", default-features = false, features = ["default-rng", "ml-kem-768"] }
+fips204 = { version = "0.4.6", default-features = false, features = ["default-rng", "ml-dsa-65"] }
+serde.workspace = true
+thiserror.workspace = true
+
