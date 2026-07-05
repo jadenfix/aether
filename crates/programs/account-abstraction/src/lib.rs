@@ -11,6 +11,7 @@
 //! - **EntryPoint**: System program that validates and executes UserOperations
 //! - **Paymaster**: Optional gas sponsor
 
+use aether_agent_schema::{AgentAuthorization, PaymentEnvelope, SideEffect};
 use aether_types::{Address, H256};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,15 @@ pub struct UserOperation {
     pub paymaster_data: Vec<u8>,
     /// Signature (validated by the account's custom logic, not Ed25519).
     pub signature: Vec<u8>,
+    /// Declared side-effect class for policy and escrow validation.
+    #[serde(default)]
+    pub side_effect: Option<SideEffect>,
+    /// Optional delegated agent session authorization.
+    #[serde(default)]
+    pub agent_authorization: Option<AgentAuthorization>,
+    /// Optional AIC/SWR payment envelope bound to this operation.
+    #[serde(default)]
+    pub payment: Option<PaymentEnvelope>,
 }
 
 impl UserOperation {
@@ -69,6 +79,27 @@ impl UserOperation {
             hasher.update(pm.as_bytes());
         }
         hasher.update(&self.paymaster_data);
+        if let Some(side_effect) = &self.side_effect {
+            hasher.update(
+                bincode::serialize(side_effect)
+                    .expect("SideEffect serialization is infallible")
+                    .as_slice(),
+            );
+        }
+        if let Some(auth) = &self.agent_authorization {
+            hasher.update(
+                bincode::serialize(auth)
+                    .expect("AgentAuthorization serialization is infallible")
+                    .as_slice(),
+            );
+        }
+        if let Some(payment) = &self.payment {
+            hasher.update(
+                bincode::serialize(payment)
+                    .expect("PaymentEnvelope serialization is infallible")
+                    .as_slice(),
+            );
+        }
         // signature intentionally excluded
         H256::from_slice(&hasher.finalize()).unwrap()
     }
@@ -99,6 +130,26 @@ impl UserOperation {
     }
 }
 
+impl Default for UserOperation {
+    fn default() -> Self {
+        Self {
+            sender: Address::from([0u8; 20]),
+            nonce: 0,
+            call_data: Vec::new(),
+            call_gas_limit: 0,
+            verification_gas_limit: 0,
+            pre_verification_gas: 0,
+            max_fee_per_gas: 0,
+            paymaster: None,
+            paymaster_data: Vec::new(),
+            signature: Vec::new(),
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
+        }
+    }
+}
+
 /// EntryPoint manages UserOperation execution.
 pub struct EntryPoint {
     /// Registered smart accounts: address → validation code hash.
@@ -107,6 +158,8 @@ pub struct EntryPoint {
     paymasters: std::collections::HashMap<Address, u128>,
     /// Nonce tracking per account to prevent replay attacks.
     nonces: std::collections::HashMap<Address, u64>,
+    /// Current slot used for session-key and payment expiration checks.
+    current_slot: u64,
 }
 
 impl EntryPoint {
@@ -115,7 +168,13 @@ impl EntryPoint {
             accounts: std::collections::HashMap::new(),
             paymasters: std::collections::HashMap::new(),
             nonces: std::collections::HashMap::new(),
+            current_slot: 0,
         }
+    }
+
+    /// Set the slot used for validating session-key and payment expiry.
+    pub fn set_current_slot(&mut self, slot: u64) {
+        self.current_slot = slot;
     }
 
     /// Register a smart account.
@@ -145,6 +204,8 @@ impl EntryPoint {
         let op_hash = op.hash();
         validator.validate_signature(&op.sender, &op_hash, &op.signature)?;
 
+        self.validate_agent_policy(op)?;
+
         // If paymaster is specified, check it's registered and has funds
         if let Some(paymaster) = &op.paymaster {
             let deposit = self
@@ -161,6 +222,50 @@ impl EntryPoint {
                     deposit,
                     required_gas_cost
                 );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_agent_policy(&self, op: &UserOperation) -> Result<()> {
+        let side_effect = op.side_effect.unwrap_or(SideEffect::Read);
+
+        if side_effect.requires_guardian() && op.agent_authorization.is_none() {
+            bail!("high-risk side effect requires agent authorization");
+        }
+
+        if let Some(auth) = &op.agent_authorization {
+            auth.validate(self.current_slot)
+                .map_err(|err| anyhow::anyhow!("agent authorization invalid: {err}"))?;
+
+            if auth.agent_account != op.sender {
+                bail!("agent authorization account does not match sender");
+            }
+
+            if !auth.allowed_side_effects.contains(&side_effect) {
+                bail!("side effect {:?} is not authorized", side_effect);
+            }
+        }
+
+        if let Some(payment) = &op.payment {
+            payment
+                .validate(self.current_slot)
+                .map_err(|err| anyhow::anyhow!("payment envelope invalid: {err}"))?;
+
+            if payment.side_effect != side_effect {
+                bail!("payment side effect does not match operation side effect");
+            }
+
+            if let Some(auth) = &op.agent_authorization {
+                if payment.amount > auth.max_per_call_aic {
+                    bail!("payment exceeds per-call agent authorization cap");
+                }
+                if !auth.allowed_recipients.is_empty()
+                    && !auth.allowed_recipients.contains(&payment.recipient)
+                {
+                    bail!("payment recipient is not authorized");
+                }
             }
         }
 
@@ -257,6 +362,7 @@ pub struct UserOpResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_agent_schema::{PaymentToken, SignatureEnvelope, SigningAlgorithm};
 
     struct AcceptAll;
     impl AccountValidator for AcceptAll {
@@ -284,6 +390,64 @@ mod tests {
             paymaster: None,
             paymaster_data: vec![],
             signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
+        }
+    }
+
+    fn hash(byte: u8) -> H256 {
+        H256::from([byte; 32])
+    }
+
+    fn address(byte: u8) -> Address {
+        Address::from([byte; 20])
+    }
+
+    fn signature_envelope(domain: &str) -> SignatureEnvelope {
+        SignatureEnvelope::new(
+            SigningAlgorithm::Ed25519,
+            domain,
+            1,
+            "agent-session",
+            hash(8),
+            vec![9; 64],
+            None,
+        )
+    }
+
+    fn purchase_authorization(sender: Address, recipient: Address) -> AgentAuthorization {
+        AgentAuthorization {
+            agent_account: sender,
+            session_public_key: vec![2; 32],
+            delegated_by: sender,
+            valid_from_slot: 1,
+            valid_until_slot: 100,
+            max_aic: 10_000,
+            max_per_call_aic: 2_000,
+            allowed_side_effects: vec![SideEffect::Read, SideEffect::Purchase],
+            allowed_tools: vec!["checkout".to_string()],
+            allowed_recipients: vec![recipient],
+            policy_hash: hash(3),
+            guardian_threshold: Some(2),
+            signature: signature_envelope("aether/agent_authorization/v1"),
+        }
+    }
+
+    fn payment(amount: u128, recipient: Address) -> PaymentEnvelope {
+        PaymentEnvelope {
+            token: PaymentToken::Aic,
+            amount,
+            recipient,
+            quote_hash: hash(4),
+            request_hash: hash(5),
+            result_hash: Some(hash(6)),
+            nonce: [7; 32],
+            expires_at_slot: 100,
+            chain_id: 1,
+            side_effect: SideEffect::Purchase,
+            max_replays: 1,
+            signature: signature_envelope("aether/payment/v1"),
         }
     }
 
@@ -378,6 +542,52 @@ mod tests {
     }
 
     #[test]
+    fn test_purchase_requires_agent_authorization() {
+        let mut ep = EntryPoint::new();
+        let sender = address(1);
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("high-risk side effect"));
+    }
+
+    #[test]
+    fn test_purchase_with_authorization_and_bound_payment_passes() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.agent_authorization = Some(purchase_authorization(sender, recipient));
+        op.payment = Some(payment(1_000, recipient));
+
+        assert!(ep.validate_user_op(&op, &AcceptAll).is_ok());
+    }
+
+    #[test]
+    fn test_payment_above_session_cap_rejected() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.agent_authorization = Some(purchase_authorization(sender, recipient));
+        op.payment = Some(payment(3_000, recipient));
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("per-call"));
+    }
+
+    #[test]
     fn test_handle_ops_batch() {
         let mut ep = EntryPoint::new();
         let s1 = Address::from_slice(&[1u8; 20]).unwrap();
@@ -457,6 +667,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
             prop_assert_eq!(op.hash(), op.hash());
         }
@@ -480,6 +693,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
             let mut op2 = op1.clone();
             op2.nonce = nonce2;
@@ -507,6 +723,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: sig1,
+                side_effect: None,
+                agent_authorization: None,
+                payment: None,
             };
             let mut op2 = op1.clone();
             op2.signature = sig2;
@@ -531,6 +750,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
             // Must not panic — returns Result
             let _ = op.total_gas();
@@ -550,6 +772,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
             prop_assert!(op.validate().is_err());
         }
@@ -573,6 +798,9 @@ mod proptests {
                     paymaster: None,
                     paymaster_data: vec![],
                     signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
                 })
                 .collect();
 
@@ -600,6 +828,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
 
             // First execution succeeds
@@ -628,6 +859,9 @@ mod proptests {
                 paymaster: None,
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
             prop_assert!(ep.validate_user_op(&op, &AcceptAll).is_err());
         }
@@ -664,6 +898,9 @@ mod proptests {
                 paymaster: Some(paymaster),
                 paymaster_data: vec![],
                 signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
             };
 
             let results = ep.handle_ops(&[op], &AcceptAll).unwrap();
@@ -692,6 +929,9 @@ mod proptests {
                         paymaster: None,
                         paymaster_data: vec![],
                         signature: vec![0u8; 64],
+            side_effect: None,
+            agent_authorization: None,
+            payment: None,
                     }
                 })
                 .collect();

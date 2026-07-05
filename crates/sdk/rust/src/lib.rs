@@ -26,12 +26,20 @@
 // ```
 // ============================================================================
 
+pub mod agent_builder;
 pub mod client;
 pub mod error;
 pub mod job_builder;
 pub mod transaction_builder;
 pub mod types;
 
+pub use aether_agent_schema::{
+    AgentAuthorization, AgentRunId, JournalRoot, PaymentEnvelope, PaymentToken, RunStatus,
+    SettlementPolicy, SideEffect, SignatureEnvelope, SigningAlgorithm, StepKind, StepReceipt,
+};
+pub use agent_builder::{
+    AgentAuthorizationBuilder, PaymentEnvelopeBuilder, SignatureEnvelopeBuilder, StepReceiptBuilder,
+};
 pub use client::AetherClient;
 pub use error::AetherSdkError;
 pub use job_builder::JobBuilder;

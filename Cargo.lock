@@ -65,8 +65,10 @@ dependencies = [
 name = "aether-account-abstraction"
 version = "0.1.0"
 dependencies = [
+ "aether-agent-schema",
  "aether-types",
  "anyhow",
+ "bincode",
  "proptest",
  "serde",
  "serde_json",
@@ -672,6 +674,7 @@ dependencies = [
 name = "aether-sdk"
 version = "0.1.0"
 dependencies = [
+ "aether-agent-schema",
  "aether-crypto-primitives",
  "aether-types",
  "anyhow",
