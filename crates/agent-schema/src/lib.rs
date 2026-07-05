@@ -31,6 +31,10 @@ pub enum AgentSchemaError {
     InvalidSpendLimit,
     #[error("guardian threshold is required for high-risk side effects")]
     MissingGuardianThreshold,
+    #[error("guardian public key is required for high-risk side effects")]
+    MissingGuardianPublicKey,
+    #[error("high-risk side effects require a FROST guardian signature")]
+    MissingFrostGuardianSignature,
     #[error("allowed side effects must not be empty")]
     EmptySideEffects,
     #[error("payment amount must be non-zero")]
@@ -199,6 +203,7 @@ pub struct AgentAuthorization {
     pub allowed_recipients: Vec<Address>,
     pub policy_hash: H256,
     pub guardian_threshold: Option<u16>,
+    pub guardian_public_key: Option<Vec<u8>>,
     pub signature: SignatureEnvelope,
 }
 
@@ -218,9 +223,20 @@ impl AgentAuthorization {
             .allowed_side_effects
             .iter()
             .any(|effect| effect.requires_guardian())
-            && self.guardian_threshold.unwrap_or_default() == 0
         {
-            return Err(AgentSchemaError::MissingGuardianThreshold);
+            if self.guardian_threshold.unwrap_or_default() == 0 {
+                return Err(AgentSchemaError::MissingGuardianThreshold);
+            }
+            if self
+                .guardian_public_key
+                .as_ref()
+                .map_or(true, Vec::is_empty)
+            {
+                return Err(AgentSchemaError::MissingGuardianPublicKey);
+            }
+            if self.signature.alg != SigningAlgorithm::FrostRistretto255 {
+                return Err(AgentSchemaError::MissingFrostGuardianSignature);
+            }
         }
         Ok(())
     }
@@ -401,12 +417,38 @@ mod tests {
             allowed_recipients: vec![addr(4)],
             policy_hash: h(5),
             guardian_threshold: None,
+            guardian_public_key: None,
             signature: sig(),
         };
 
         assert_eq!(
             authorization.validate(20),
             Err(AgentSchemaError::MissingGuardianThreshold)
+        );
+    }
+
+    #[test]
+    fn high_risk_authorization_requires_frost_signature() {
+        let authorization = AgentAuthorization {
+            agent_account: addr(1),
+            session_public_key: vec![2; 32],
+            delegated_by: addr(3),
+            valid_from_slot: 10,
+            valid_until_slot: 100,
+            max_aic: 10_000,
+            max_per_call_aic: 1_000,
+            allowed_side_effects: vec![SideEffect::Purchase],
+            allowed_tools: vec!["checkout".to_string()],
+            allowed_recipients: vec![addr(4)],
+            policy_hash: h(5),
+            guardian_threshold: Some(2),
+            guardian_public_key: Some(vec![7; 32]),
+            signature: sig(),
+        };
+
+        assert_eq!(
+            authorization.validate(20),
+            Err(AgentSchemaError::MissingFrostGuardianSignature)
         );
     }
 

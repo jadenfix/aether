@@ -1,0 +1,14 @@
+[package]
+name = "aether-crypto-threshold"
+version.workspace = true
+edition.workspace = true
+description = "Threshold signature verification primitives for Aether agent guardian approvals"
+categories = ["cryptography"]
+keywords = ["aether", "frost", "threshold", "ristretto"]
+
+[dependencies]
+frost-ristretto255 = { version = "=1.0.0", default-features = false, features = ["serialization"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+rand = "0.8"

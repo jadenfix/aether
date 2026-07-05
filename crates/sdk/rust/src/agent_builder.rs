@@ -99,6 +99,7 @@ pub struct AgentAuthorizationBuilder {
     allowed_recipients: Vec<Address>,
     policy_hash: Option<H256>,
     guardian_threshold: Option<u16>,
+    guardian_public_key: Option<Vec<u8>>,
     signature: Option<SignatureEnvelope>,
 }
 
@@ -117,6 +118,7 @@ impl AgentAuthorizationBuilder {
             allowed_recipients: Vec::new(),
             policy_hash: None,
             guardian_threshold: None,
+            guardian_public_key: None,
             signature: None,
         }
     }
@@ -173,6 +175,11 @@ impl AgentAuthorizationBuilder {
         self
     }
 
+    pub fn guardian_public_key(mut self, public_key: Vec<u8>) -> Self {
+        self.guardian_public_key = Some(public_key);
+        self
+    }
+
     pub fn signature(mut self, signature: SignatureEnvelope) -> Self {
         self.signature = Some(signature);
         self
@@ -206,6 +213,7 @@ impl AgentAuthorizationBuilder {
                 .policy_hash
                 .ok_or_else(|| AetherSdkError::build("policy_hash not set"))?,
             guardian_threshold: self.guardian_threshold,
+            guardian_public_key: self.guardian_public_key,
             signature: self
                 .signature
                 .ok_or_else(|| AetherSdkError::build("authorization signature not set"))?,
@@ -545,6 +553,7 @@ mod tests {
             .spend_limits(1000, 100)
             .allow_side_effect(SideEffect::Purchase)
             .policy_hash(h(3))
+            .guardian_public_key(vec![4; 32])
             .signature(sig("aether/agent_authorization/v1"))
             .build(10)
             .unwrap_err();

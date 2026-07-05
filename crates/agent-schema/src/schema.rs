@@ -96,6 +96,7 @@ pub fn agent_contract_schema() -> Value {
                     "allowed_tools",
                     "allowed_recipients",
                     "policy_hash",
+                    "guardian_public_key",
                     "signature"
                 ],
                 "properties": {
@@ -122,6 +123,9 @@ pub fn agent_contract_schema() -> Value {
                     "policy_hash": { "$ref": "#/$defs/H256" },
                     "guardian_threshold": {
                         "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }]
+                    },
+                    "guardian_public_key": {
+                        "anyOf": [{ "$ref": "#/$defs/Bytes" }, { "type": "null" }]
                     },
                     "signature": { "$ref": "#/$defs/SignatureEnvelope" }
                 }

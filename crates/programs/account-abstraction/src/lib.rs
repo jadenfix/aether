@@ -11,7 +11,8 @@
 //! - **EntryPoint**: System program that validates and executes UserOperations
 //! - **Paymaster**: Optional gas sponsor
 
-use aether_agent_schema::{AgentAuthorization, PaymentEnvelope, SideEffect};
+use aether_agent_schema::{AgentAuthorization, PaymentEnvelope, SideEffect, SigningAlgorithm};
+use aether_crypto_threshold::verify_frost_ristretto255;
 use aether_types::{Address, H256};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -101,6 +102,56 @@ impl UserOperation {
             );
         }
         // signature intentionally excluded
+        H256::from_slice(&hasher.finalize()).unwrap()
+    }
+
+    /// Hash the agent policy payload for guardian signing.
+    ///
+    /// This excludes the outer operation signature and all inner authorization
+    /// or payment signatures, avoiding circular signatures while binding the
+    /// guardian approval to the operation, payment terms, side effect, and
+    /// authorization policy.
+    pub fn agent_policy_hash(&self) -> H256 {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"aether/user_operation_agent_policy/v1");
+        hasher.update(self.sender.as_bytes());
+        hasher.update(self.nonce.to_le_bytes());
+        hasher.update(&self.call_data);
+        if let Some(side_effect) = &self.side_effect {
+            hasher.update(
+                bincode::serialize(side_effect)
+                    .expect("SideEffect serialization is infallible")
+                    .as_slice(),
+            );
+        }
+        if let Some(auth) = &self.agent_authorization {
+            hasher.update(auth.agent_account.as_bytes());
+            hasher.update(&auth.session_public_key);
+            hasher.update(auth.delegated_by.as_bytes());
+            hasher.update(auth.valid_from_slot.to_le_bytes());
+            hasher.update(auth.valid_until_slot.to_le_bytes());
+            hasher.update(auth.max_aic.to_le_bytes());
+            hasher.update(auth.max_per_call_aic.to_le_bytes());
+            hasher.update(auth.policy_hash.as_bytes());
+            hasher.update(auth.guardian_threshold.unwrap_or_default().to_le_bytes());
+            if let Some(key) = &auth.guardian_public_key {
+                hasher.update(key);
+            }
+        }
+        if let Some(payment) = &self.payment {
+            hasher.update(payment.amount.to_le_bytes());
+            hasher.update(payment.recipient.as_bytes());
+            hasher.update(payment.quote_hash.as_bytes());
+            hasher.update(payment.request_hash.as_bytes());
+            if let Some(result_hash) = payment.result_hash {
+                hasher.update(result_hash.as_bytes());
+            }
+            hasher.update(payment.nonce);
+            hasher.update(payment.expires_at_slot.to_le_bytes());
+            hasher.update(payment.chain_id.to_le_bytes());
+            hasher.update(payment.max_replays.to_le_bytes());
+        }
         H256::from_slice(&hasher.finalize()).unwrap()
     }
 
@@ -230,8 +281,9 @@ impl EntryPoint {
 
     fn validate_agent_policy(&self, op: &UserOperation) -> Result<()> {
         let side_effect = op.side_effect.unwrap_or(SideEffect::Read);
+        let high_risk = side_effect.requires_guardian();
 
-        if side_effect.requires_guardian() && op.agent_authorization.is_none() {
+        if high_risk && op.agent_authorization.is_none() {
             bail!("high-risk side effect requires agent authorization");
         }
 
@@ -245,6 +297,26 @@ impl EntryPoint {
 
             if !auth.allowed_side_effects.contains(&side_effect) {
                 bail!("side effect {:?} is not authorized", side_effect);
+            }
+
+            if high_risk {
+                if auth.signature.alg != SigningAlgorithm::FrostRistretto255 {
+                    bail!("high-risk side effect requires FROST guardian signature");
+                }
+                let policy_hash = op.agent_policy_hash();
+                if auth.signature.payload_hash != policy_hash {
+                    bail!("guardian signature payload hash does not match operation policy hash");
+                }
+                let guardian_key = auth
+                    .guardian_public_key
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("guardian public key missing"))?;
+                verify_frost_ristretto255(
+                    guardian_key,
+                    policy_hash.as_bytes(),
+                    &auth.signature.signature,
+                )
+                .map_err(|err| anyhow::anyhow!("guardian FROST verification failed: {err}"))?;
             }
         }
 
@@ -363,6 +435,13 @@ pub struct UserOpResult {
 mod tests {
     use super::*;
     use aether_agent_schema::{PaymentToken, SignatureEnvelope, SigningAlgorithm};
+    use frost_ristretto255::{
+        aggregate,
+        keys::{generate_with_dealer, IdentifierList, KeyPackage, PublicKeyPackage, SecretShare},
+        round1, round2, Identifier, SigningPackage,
+    };
+    use rand::thread_rng;
+    use std::collections::BTreeMap;
 
     struct AcceptAll;
     impl AccountValidator for AcceptAll {
@@ -416,7 +495,58 @@ mod tests {
         )
     }
 
-    fn purchase_authorization(sender: Address, recipient: Address) -> AgentAuthorization {
+    fn frost_key_material() -> (
+        [Identifier; 3],
+        BTreeMap<Identifier, SecretShare>,
+        PublicKeyPackage,
+    ) {
+        let mut rng = thread_rng();
+        let identifiers = [
+            Identifier::try_from(1).unwrap(),
+            Identifier::try_from(2).unwrap(),
+            Identifier::try_from(3).unwrap(),
+        ];
+        let (shares, public_key_package) =
+            generate_with_dealer(3, 2, IdentifierList::Custom(&identifiers), &mut rng).unwrap();
+        (identifiers, shares, public_key_package)
+    }
+
+    fn frost_signature(
+        message: &[u8],
+        identifiers: &[Identifier; 3],
+        shares: &BTreeMap<Identifier, SecretShare>,
+        public_key_package: &PublicKeyPackage,
+    ) -> Vec<u8> {
+        let mut rng = thread_rng();
+        let mut commitments = BTreeMap::new();
+        let mut nonces = BTreeMap::new();
+        for identifier in identifiers.iter().take(2) {
+            let key_package: KeyPackage =
+                shares.get(identifier).unwrap().clone().try_into().unwrap();
+            let (signing_nonces, signing_commitments) =
+                round1::commit(key_package.signing_share(), &mut rng);
+            commitments.insert(*identifier, signing_commitments);
+            nonces.insert(*identifier, (signing_nonces, key_package));
+        }
+
+        let signing_package = SigningPackage::new(commitments, message);
+        let mut signature_shares = BTreeMap::new();
+        for (identifier, (signing_nonces, key_package)) in nonces {
+            let share = round2::sign(&signing_package, &signing_nonces, &key_package).unwrap();
+            signature_shares.insert(identifier, share);
+        }
+        let signature =
+            aggregate(&signing_package, &signature_shares, &public_key_package).unwrap();
+        signature.serialize().to_vec()
+    }
+
+    fn purchase_authorization(
+        sender: Address,
+        recipient: Address,
+        guardian_public_key: Vec<u8>,
+        guardian_signature: Vec<u8>,
+        policy_hash: H256,
+    ) -> AgentAuthorization {
         AgentAuthorization {
             agent_account: sender,
             session_public_key: vec![2; 32],
@@ -430,8 +560,65 @@ mod tests {
             allowed_recipients: vec![recipient],
             policy_hash: hash(3),
             guardian_threshold: Some(2),
-            signature: signature_envelope("aether/agent_authorization/v1"),
+            guardian_public_key: Some(guardian_public_key),
+            signature: SignatureEnvelope::new(
+                SigningAlgorithm::FrostRistretto255,
+                "aether/agent_authorization/v1",
+                1,
+                "guardian-frost",
+                policy_hash,
+                guardian_signature,
+                None,
+            ),
         }
+    }
+
+    fn attach_valid_purchase_authorization(
+        op: &mut UserOperation,
+        sender: Address,
+        recipient: Address,
+    ) {
+        let (identifiers, shares, public_key_package) = frost_key_material();
+        let guardian_public_key = public_key_package.verifying_key().serialize().to_vec();
+        let unsigned_auth = AgentAuthorization {
+            agent_account: sender,
+            session_public_key: vec![2; 32],
+            delegated_by: sender,
+            valid_from_slot: 1,
+            valid_until_slot: 100,
+            max_aic: 10_000,
+            max_per_call_aic: 2_000,
+            allowed_side_effects: vec![SideEffect::Read, SideEffect::Purchase],
+            allowed_tools: vec!["checkout".to_string()],
+            allowed_recipients: vec![recipient],
+            policy_hash: hash(3),
+            guardian_threshold: Some(2),
+            guardian_public_key: Some(guardian_public_key.clone()),
+            signature: SignatureEnvelope::new(
+                SigningAlgorithm::FrostRistretto255,
+                "aether/agent_authorization/v1",
+                1,
+                "guardian-frost",
+                H256::zero(),
+                vec![1; 64],
+                None,
+            ),
+        };
+        op.agent_authorization = Some(unsigned_auth);
+        let policy_hash = op.agent_policy_hash();
+        let guardian_signature = frost_signature(
+            policy_hash.as_bytes(),
+            &identifiers,
+            &shares,
+            &public_key_package,
+        );
+        op.agent_authorization = Some(purchase_authorization(
+            sender,
+            recipient,
+            guardian_public_key,
+            guardian_signature,
+            policy_hash,
+        ));
     }
 
     fn payment(amount: u128, recipient: Address) -> PaymentEnvelope {
@@ -486,7 +673,8 @@ mod tests {
         ep.register_account(sender, H256::from_slice(&[2u8; 32]).unwrap());
 
         let op = make_user_op(1);
-        assert!(ep.validate_user_op(&op, &AcceptAll).is_ok());
+        let result = ep.validate_user_op(&op, &AcceptAll);
+        assert!(result.is_ok(), "validation failed: {result:?}");
     }
 
     #[test]
@@ -564,10 +752,11 @@ mod tests {
 
         let mut op = make_user_op(1);
         op.side_effect = Some(SideEffect::Purchase);
-        op.agent_authorization = Some(purchase_authorization(sender, recipient));
         op.payment = Some(payment(1_000, recipient));
+        attach_valid_purchase_authorization(&mut op, sender, recipient);
 
-        assert!(ep.validate_user_op(&op, &AcceptAll).is_ok());
+        let result = ep.validate_user_op(&op, &AcceptAll);
+        assert!(result.is_ok(), "validation failed: {result:?}");
     }
 
     #[test]
@@ -580,8 +769,8 @@ mod tests {
 
         let mut op = make_user_op(1);
         op.side_effect = Some(SideEffect::Purchase);
-        op.agent_authorization = Some(purchase_authorization(sender, recipient));
         op.payment = Some(payment(3_000, recipient));
+        attach_valid_purchase_authorization(&mut op, sender, recipient);
 
         let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
         assert!(err.to_string().contains("per-call"));
