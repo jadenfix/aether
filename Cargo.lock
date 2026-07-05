@@ -74,6 +74,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-agent-schema"
+version = "0.1.0"
+dependencies = [
+ "aether-types",
+ "anyhow",
+ "bincode",
+ "blake3",
+ "proptest",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "aether-ai-coordinator"
 version = "0.1.0"
 dependencies = [

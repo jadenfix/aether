@@ -79,6 +79,7 @@ members = [
     
     # Common types & utilities
     "crates/types",
+    "crates/agent-schema",
     "crates/codecs",
     "crates/metrics",
     
