@@ -8,6 +8,9 @@ use aether_types::{Address, Slot, H256};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod schema;
+pub use schema::agent_contract_schema;
+
 const DOMAIN_PREFIX: &str = "aether/";
 
 #[derive(Debug, Error, PartialEq, Eq)]

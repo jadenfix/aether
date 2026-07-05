@@ -85,6 +85,7 @@ dependencies = [
  "blake3",
  "proptest",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 
