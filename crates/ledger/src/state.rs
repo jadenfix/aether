@@ -611,7 +611,7 @@ impl Ledger {
             }
         }
 
-        for (tx, _is_valid) in transactions.iter().zip(batch_results.into_iter()) {
+        for (tx, _is_valid) in transactions.iter().zip(batch_results) {
             // Validate chain_id to prevent cross-chain replay attacks
             if let Some(expected_id) = expected_chain_id {
                 if tx.chain_id != expected_id {

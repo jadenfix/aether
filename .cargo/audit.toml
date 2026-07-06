@@ -1,0 +1,9 @@
+[advisories]
+# hickory-proto remains in Cargo.lock via libp2p DNS/mdns optional packages,
+# but Aether disables libp2p default features and does not enable DNS/mdns.
+# Verified with:
+#   cargo tree --workspace --all-features --target all -i hickory-proto@0.25.2
+ignore = [
+    "RUSTSEC-2026-0118",
+    "RUSTSEC-2026-0119",
+]

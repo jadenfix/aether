@@ -316,7 +316,7 @@ impl Node {
         for (slot, hash, block) in recent {
             by_slot.insert(*slot, *hash);
             by_hash.insert(*hash, block.clone());
-            if latest_slot.map_or(true, |s| *slot > s) {
+            if latest_slot.is_none_or(|s| *slot > s) {
                 latest_slot = Some(*slot);
                 latest_hash = *hash;
             }

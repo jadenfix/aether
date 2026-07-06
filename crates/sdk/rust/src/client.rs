@@ -6,6 +6,9 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use crate::agent_builder::{
+    AgentAuthorizationBuilder, PaymentEnvelopeBuilder, SignatureEnvelopeBuilder, StepReceiptBuilder,
+};
 use crate::error::AetherSdkError;
 use crate::job_builder::JobBuilder;
 use crate::transaction_builder::TransferBuilder;
@@ -55,6 +58,26 @@ impl AetherClient {
     /// Start building an AI job submission.
     pub fn job(&self) -> JobBuilder {
         JobBuilder::new(&self.endpoint)
+    }
+
+    /// Start building a typed signature envelope for agent settlement objects.
+    pub fn signature_envelope(&self) -> SignatureEnvelopeBuilder {
+        SignatureEnvelopeBuilder::new()
+    }
+
+    /// Start building an agent session authorization.
+    pub fn agent_authorization(&self) -> AgentAuthorizationBuilder {
+        AgentAuthorizationBuilder::new()
+    }
+
+    /// Start building an agent step receipt.
+    pub fn step_receipt(&self) -> StepReceiptBuilder {
+        StepReceiptBuilder::new()
+    }
+
+    /// Start building an AIC/SWR payment envelope.
+    pub fn payment_envelope(&self) -> PaymentEnvelopeBuilder {
+        PaymentEnvelopeBuilder::new()
     }
 
     /// Submit a signed transaction to the network.

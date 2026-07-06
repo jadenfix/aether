@@ -26,12 +26,29 @@
 // ```
 // ============================================================================
 
+pub mod agent_builder;
+pub mod agent_identity;
 pub mod client;
 pub mod error;
 pub mod job_builder;
 pub mod transaction_builder;
 pub mod types;
 
+pub use aether_agent_schema::{
+    journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentRunId, JournalProof,
+    JournalProofNode, JournalRoot, MerkleSide, PaymentEnvelope, PaymentToken, RunStatus,
+    SettlementPolicy, SideEffect, SignatureEnvelope, SigningAlgorithm, StepKind, StepReceipt,
+};
+pub use aether_crypto_pq::{
+    HybridIdentityProof, MlDsa87Keypair, PqSignatureAlgorithm, PqSignatureEnvelope,
+};
+pub use agent_builder::{
+    AgentAuthorizationBuilder, PaymentEnvelopeBuilder, SignatureEnvelopeBuilder, StepReceiptBuilder,
+};
+pub use agent_identity::{
+    agent_identity_message, generate_hybrid_agent_identity, sign_hybrid_agent_identity,
+    verify_hybrid_agent_identity,
+};
 pub use client::AetherClient;
 pub use error::AetherSdkError;
 pub use job_builder::JobBuilder;

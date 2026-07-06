@@ -138,7 +138,7 @@ impl MeshCoordinator {
         }
 
         // Sort by reputation (best first)
-        candidates.sort_by(|a, b| b.reputation_score.cmp(&a.reputation_score));
+        candidates.sort_by_key(|worker| std::cmp::Reverse(worker.reputation_score));
 
         let best_worker = candidates[0];
 
