@@ -84,6 +84,28 @@ jobs:
         run: cargo test --doc --all-features --workspace
 
   # ──────────────────────────────────────────────
+  # TypeScript: SDK build and tests
+  # ──────────────────────────────────────────────
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript SDK tests
+        run: npm run test --prefix sdks/typescript
+
+  # ──────────────────────────────────────────────
   # Build: release binaries for supported targets
   # ──────────────────────────────────────────────
   build:

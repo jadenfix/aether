@@ -17,8 +17,12 @@
   ],
   "author": "Aether Labs",
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^20.11.0"
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
   },
-  "types": "src/index.ts"
+  "types": "src/index.ts",
+  "dependencies": {
+    "@noble/ed25519": "^1.7.5",
+    "@noble/hashes": "^1.8.0"
+  }
 }
