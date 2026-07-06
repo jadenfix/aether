@@ -465,6 +465,54 @@ impl PaymentEnvelopeBuilder {
         self
     }
 
+    pub fn signing_payload_hash(&self) -> Result<H256, AetherSdkError> {
+        let envelope = PaymentEnvelope {
+            token: self.token,
+            amount: self
+                .amount
+                .ok_or_else(|| AetherSdkError::build("payment amount not set"))?,
+            recipient: self
+                .recipient
+                .ok_or_else(|| AetherSdkError::build("payment recipient not set"))?,
+            quote_hash: self
+                .quote_hash
+                .ok_or_else(|| AetherSdkError::build("quote_hash not set"))?,
+            request_hash: self
+                .request_hash
+                .ok_or_else(|| AetherSdkError::build("request_hash not set"))?,
+            result_hash: self.result_hash,
+            nonce: self
+                .nonce
+                .ok_or_else(|| AetherSdkError::build("nonce not set"))?,
+            expires_at_slot: self
+                .expires_at_slot
+                .ok_or_else(|| AetherSdkError::build("expires_at_slot not set"))?,
+            chain_id: self
+                .chain_id
+                .ok_or_else(|| AetherSdkError::build("chain_id not set"))?,
+            side_effect: self
+                .side_effect
+                .ok_or_else(|| AetherSdkError::build("payment side_effect not set"))?,
+            max_replays: self.max_replays,
+            signature: SignatureEnvelope::new(
+                SigningAlgorithm::Ed25519,
+                aether_agent_schema::PAYMENT_SIGNATURE_DOMAIN,
+                self.chain_id
+                    .ok_or_else(|| AetherSdkError::build("chain_id not set"))?,
+                "unsigned-payment",
+                H256::zero(),
+                vec![1],
+                None,
+            ),
+        };
+        envelope
+            .validate(0)
+            .map_err(|err| AetherSdkError::build(err.to_string()))?;
+        envelope
+            .signing_payload_hash()
+            .map_err(|err| AetherSdkError::build(err.to_string()))
+    }
+
     pub fn build(self, current_slot: Slot) -> Result<PaymentEnvelope, AetherSdkError> {
         let envelope = PaymentEnvelope {
             token: self.token,
