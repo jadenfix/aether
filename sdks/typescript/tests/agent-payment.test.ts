@@ -7,6 +7,7 @@ import {
   AETHER_PAYMENT_HASH_HEADER,
   AETHER_PAYMENT_HEADER,
   AETHER_PAYMENT_SCHEME,
+  PAYMENT_AUTHORIZATION_DOMAIN,
   PAYMENT_SIGNATURE_DOMAIN,
   attachPaymentSignature,
   buildPaymentRequiredResponse,
@@ -70,6 +71,7 @@ test("payment signing payload excludes signature and changes on settlement field
   const baseline = paymentSigningPayloadHash(payment);
 
   assert.equal(payment.signature.domain, PAYMENT_SIGNATURE_DOMAIN);
+  assert.equal(PAYMENT_AUTHORIZATION_DOMAIN, PAYMENT_SIGNATURE_DOMAIN);
   assert.equal(payment.signature.payload_hash, baseline);
   assert.equal(
     baseline,
@@ -113,7 +115,7 @@ test("payment validation rejects non-canonical signature domains", () => {
       paymentEnvelopeHash({
         ...payment,
         signature: {
-        ...payment.signature,
+          ...payment.signature,
           domain: "aether/not_payment/v1",
         },
       }),
