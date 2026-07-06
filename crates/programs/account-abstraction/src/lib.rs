@@ -535,9 +535,8 @@ mod tests {
             let share = round2::sign(&signing_package, &signing_nonces, &key_package).unwrap();
             signature_shares.insert(identifier, share);
         }
-        let signature =
-            aggregate(&signing_package, &signature_shares, &public_key_package).unwrap();
-        signature.serialize().to_vec()
+        let signature = aggregate(&signing_package, &signature_shares, public_key_package).unwrap();
+        signature.serialize().unwrap()
     }
 
     fn purchase_authorization(
@@ -579,7 +578,7 @@ mod tests {
         recipient: Address,
     ) {
         let (identifiers, shares, public_key_package) = frost_key_material();
-        let guardian_public_key = public_key_package.verifying_key().serialize().to_vec();
+        let guardian_public_key = public_key_package.verifying_key().serialize().unwrap();
         let unsigned_auth = AgentAuthorization {
             agent_account: sender,
             session_public_key: vec![2; 32],

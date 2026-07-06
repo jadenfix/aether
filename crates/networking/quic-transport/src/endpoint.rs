@@ -3,10 +3,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Endpoint, ServerConfig, TransportConfig};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tracing::{debug, info};
 
 use crate::connection::QuicConnection;
+
+type QuicCertificate = CertificateDer<'static>;
+type QuicPrivateKey = PrivateKeyDer<'static>;
 
 /// Production-ready QUIC endpoint with performance tuning
 ///
@@ -35,8 +40,8 @@ impl QuicEndpoint {
     /// Used internally and for testing to share certificates between endpoints
     pub async fn new_with_cert(
         bind_addr: SocketAddr,
-        cert: rustls::Certificate,
-        key: rustls::PrivateKey,
+        cert: QuicCertificate,
+        key: QuicPrivateKey,
     ) -> Result<Self> {
         let server_config = configure_server(cert.clone(), key)?;
         let mut endpoint =
@@ -97,37 +102,47 @@ impl QuicEndpoint {
 }
 
 /// Configure server with production-ready transport settings
-fn configure_server(cert: rustls::Certificate, key: rustls::PrivateKey) -> Result<ServerConfig> {
-    let mut server_crypto = rustls::ServerConfig::builder()
-        .with_safe_defaults()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert], key)
-        .context("Failed to configure TLS")?;
+fn configure_server(cert: QuicCertificate, key: QuicPrivateKey) -> Result<ServerConfig> {
+    let mut server_crypto = rustls::ServerConfig::builder_with_provider(
+        rustls::crypto::ring::default_provider().into(),
+    )
+    .with_safe_default_protocol_versions()
+    .context("Failed to configure TLS protocol versions")?
+    .with_no_client_auth()
+    .with_single_cert(vec![cert], key)
+    .context("Failed to configure TLS")?;
 
     server_crypto.alpn_protocols = vec![b"aether/1".to_vec()];
     server_crypto.max_early_data_size = 0; // Disable 0-RTT for now
 
-    let mut server_config = ServerConfig::with_crypto(Arc::new(server_crypto));
+    let quic_crypto = QuicServerConfig::try_from(Arc::new(server_crypto))
+        .context("Failed to adapt TLS server config for QUIC")?;
+    let mut server_config = ServerConfig::with_crypto(Arc::new(quic_crypto));
     server_config.transport_config(Arc::new(create_transport_config()));
 
     Ok(server_config)
 }
 
 /// Configure client with production-ready transport settings
-fn configure_client(cert: rustls::Certificate) -> Result<ClientConfig> {
+fn configure_client(cert: QuicCertificate) -> Result<ClientConfig> {
     let mut roots = rustls::RootCertStore::empty();
     roots
-        .add(&cert)
+        .add(cert)
         .context("Failed to add certificate to root store")?;
 
-    let mut client_crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let mut client_crypto = rustls::ClientConfig::builder_with_provider(
+        rustls::crypto::ring::default_provider().into(),
+    )
+    .with_safe_default_protocol_versions()
+    .context("Failed to configure TLS protocol versions")?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
 
     client_crypto.alpn_protocols = vec![b"aether/1".to_vec()];
 
-    let mut client_config = ClientConfig::new(Arc::new(client_crypto));
+    let quic_crypto = QuicClientConfig::try_from(Arc::new(client_crypto))
+        .context("Failed to adapt TLS client config for QUIC")?;
+    let mut client_config = ClientConfig::new(Arc::new(quic_crypto));
     client_config.transport_config(Arc::new(create_transport_config()));
 
     Ok(client_config)
@@ -165,12 +180,15 @@ fn create_transport_config() -> TransportConfig {
 ///
 /// Production validators should use proper PKI certificates
 /// with CA-signed certs and certificate pinning.
-pub(crate) fn generate_self_signed_cert() -> Result<(rustls::Certificate, rustls::PrivateKey)> {
-    let cert = rcgen::generate_simple_self_signed(vec!["validator.aether.local".to_string()])
-        .context("Failed to generate certificate")?;
+pub(crate) fn generate_self_signed_cert() -> Result<(QuicCertificate, QuicPrivateKey)> {
+    let certified_key =
+        rcgen::generate_simple_self_signed(vec!["validator.aether.local".to_string()])
+            .context("Failed to generate certificate")?;
 
-    let key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let cert_der = rustls::Certificate(cert.serialize_der().context("Failed to serialize cert")?);
+    let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(
+        certified_key.key_pair.serialize_der(),
+    ));
+    let cert_der = certified_key.cert.der().clone();
 
     Ok((cert_der, key))
 }
@@ -207,8 +225,8 @@ mod tests {
     #[tokio::test]
     async fn test_self_signed_cert() {
         let (cert, key) = generate_self_signed_cert().unwrap();
-        assert!(!cert.0.is_empty());
-        assert!(!key.0.is_empty());
+        assert!(!cert.as_ref().is_empty());
+        assert!(!key.secret_der().is_empty());
     }
 
     #[tokio::test]
@@ -219,7 +237,7 @@ mod tests {
         let server = match QuicEndpoint::new_with_cert(
             "127.0.0.1:0".parse().unwrap(),
             cert.clone(),
-            key.clone(),
+            key.clone_key(),
         )
         .await
         {

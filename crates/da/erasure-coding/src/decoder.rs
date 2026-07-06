@@ -319,7 +319,7 @@ mod proptests {
             let encoder = ReedSolomonEncoder::new(k, r).unwrap();
             let decoder = ReedSolomonDecoder::new(k, r).unwrap();
             let mut data = prefix;
-            data.extend(std::iter::repeat(0u8).take(trailing_zeros));
+            data.extend(std::iter::repeat_n(0u8, trailing_zeros));
             let shards = encoder.encode(&data).unwrap();
             let with_opts: Vec<_> = shards.into_iter().map(Some).collect();
             let recovered = decoder.decode(&with_opts).unwrap();

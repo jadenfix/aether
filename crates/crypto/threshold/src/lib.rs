@@ -29,9 +29,9 @@ pub fn verify_frost_ristretto255(
     let signature: [u8; 64] = signature
         .try_into()
         .map_err(|_| ThresholdError::InvalidSignatureEncoding)?;
-    let verifying_key = frost_ristretto255::VerifyingKey::deserialize(verifying_key)
+    let verifying_key = frost_ristretto255::VerifyingKey::deserialize(&verifying_key)
         .map_err(|_| ThresholdError::InvalidVerifyingKey)?;
-    let signature = frost_ristretto255::Signature::deserialize(signature)
+    let signature = frost_ristretto255::Signature::deserialize(&signature)
         .map_err(|_| ThresholdError::InvalidSignatureEncoding)?;
     verifying_key
         .verify(message, &signature)
@@ -80,8 +80,8 @@ mod tests {
             aggregate(&signing_package, &signature_shares, &public_key_package).unwrap();
 
         (
-            public_key_package.verifying_key().serialize().to_vec(),
-            signature.serialize().to_vec(),
+            public_key_package.verifying_key().serialize().unwrap(),
+            signature.serialize().unwrap(),
         )
     }
 

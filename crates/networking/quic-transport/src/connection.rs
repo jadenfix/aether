@@ -42,7 +42,7 @@ impl QuicConnection {
             .await
             .context("Failed to write to stream")?;
 
-        stream.finish().await.context("Failed to finish stream")?;
+        stream.finish().context("Failed to finish stream")?;
 
         debug!("Sent {} bytes to {}", data.len(), self.remote());
 
@@ -65,7 +65,7 @@ impl QuicConnection {
         send.write_all(&data)
             .await
             .context("Failed to write request")?;
-        send.finish().await.context("Failed to finish send")?;
+        send.finish().context("Failed to finish send")?;
 
         // Receive response
         let response = recv
@@ -155,7 +155,7 @@ mod tests {
         let server = match QuicEndpoint::new_with_cert(
             "127.0.0.1:0".parse().unwrap(),
             cert.clone(),
-            key.clone(),
+            key.clone_key(),
         )
         .await
         {
@@ -207,7 +207,7 @@ mod tests {
         let server = match QuicEndpoint::new_with_cert(
             "127.0.0.1:0".parse().unwrap(),
             cert.clone(),
-            key.clone(),
+            key.clone_key(),
         )
         .await
         {
@@ -243,7 +243,8 @@ mod tests {
                 let (mut send, mut recv) = conn.accept_bi().await.unwrap();
                 let data = QuicConnection::read_stream(&mut recv).await.unwrap();
                 send.write_all(&data).await.unwrap();
-                send.finish().await.unwrap();
+                send.finish().unwrap();
+                let _ = send.stopped().await;
             }
         });
 
@@ -264,7 +265,7 @@ mod tests {
         let server = match QuicEndpoint::new_with_cert(
             "127.0.0.1:0".parse().unwrap(),
             cert.clone(),
-            key.clone(),
+            key.clone_key(),
         )
         .await
         {

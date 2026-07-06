@@ -126,7 +126,7 @@ impl SignatureEnvelope {
             return Err(AgentSchemaError::EmptySignature);
         }
         if self.alg.requires_post_quantum_component()
-            && self.pq_signature.as_ref().map_or(true, Vec::is_empty)
+            && self.pq_signature.as_ref().is_none_or(Vec::is_empty)
         {
             return Err(AgentSchemaError::MissingPostQuantumSignature(self.alg));
         }
@@ -276,11 +276,7 @@ impl AgentAuthorization {
             if self.guardian_threshold.unwrap_or_default() == 0 {
                 return Err(AgentSchemaError::MissingGuardianThreshold);
             }
-            if self
-                .guardian_public_key
-                .as_ref()
-                .map_or(true, Vec::is_empty)
-            {
+            if self.guardian_public_key.as_ref().is_none_or(Vec::is_empty) {
                 return Err(AgentSchemaError::MissingGuardianPublicKey);
             }
             if self.signature.alg != SigningAlgorithm::FrostRistretto255 {

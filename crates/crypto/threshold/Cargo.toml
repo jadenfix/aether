@@ -7,7 +7,7 @@ categories = ["cryptography"]
 keywords = ["aether", "frost", "threshold", "ristretto"]
 
 [dependencies]
-frost-ristretto255 = { version = "=1.0.0", default-features = false, features = ["serialization"] }
+frost-ristretto255 = { version = "3.0.0", default-features = false, features = ["serialization"] }
 thiserror.workspace = true
 
 [dev-dependencies]

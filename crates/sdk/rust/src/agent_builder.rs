@@ -86,6 +86,12 @@ impl SignatureEnvelopeBuilder {
     }
 }
 
+impl Default for SignatureEnvelopeBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct AgentAuthorizationBuilder {
     agent_account: Option<Address>,
     session_public_key: Option<Vec<u8>>,
@@ -225,6 +231,12 @@ impl AgentAuthorizationBuilder {
     }
 }
 
+impl Default for AgentAuthorizationBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct StepReceiptBuilder {
     run_id: Option<AgentRunId>,
     seq: Option<u64>,
@@ -347,6 +359,12 @@ impl StepReceiptBuilder {
             .validate()
             .map_err(|err| AetherSdkError::build(err.to_string()))?;
         Ok(receipt)
+    }
+}
+
+impl Default for StepReceiptBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -480,6 +498,12 @@ impl PaymentEnvelopeBuilder {
             .validate(current_slot)
             .map_err(|err| AetherSdkError::build(err.to_string()))?;
         Ok(envelope)
+    }
+}
+
+impl Default for PaymentEnvelopeBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

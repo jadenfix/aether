@@ -86,7 +86,7 @@ fn frost_signature(
     aggregate(&signing_package, &signature_shares, public_key_package)
         .unwrap()
         .serialize()
-        .to_vec()
+        .unwrap()
 }
 
 fn authorization(
@@ -134,7 +134,7 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
         .unwrap();
 
     let (identifiers, shares, public_key_package) = frost_key_material();
-    let guardian_public_key = public_key_package.verifying_key().serialize().to_vec();
+    let guardian_public_key = public_key_package.verifying_key().serialize().unwrap();
     let placeholder_auth = authorization(
         sender,
         provider,

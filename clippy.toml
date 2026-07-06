@@ -2,11 +2,10 @@
 
 # Deny certain lints
 # These are errors, not warnings
-msrv = "1.75"
+msrv = "1.86"
 
 # Cognitive complexity threshold
 cognitive-complexity-threshold = 30
 
 # Allow certain lints that can be overly pedantic
 avoid-breaking-exported-api = false
-

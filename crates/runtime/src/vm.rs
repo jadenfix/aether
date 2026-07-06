@@ -7,7 +7,7 @@ use wasmtime::*;
 /// Maximum WASM linear memory: 16 MB (256 pages × 64 KB).
 const MAX_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum WASM table elements per instance.
-const MAX_TABLE_ELEMENTS: u32 = 10_000;
+const MAX_TABLE_ELEMENTS: usize = 10_000;
 
 // ResourceLimiter is implemented on StoreData below to enforce hard caps on
 // memory and table allocations per contract execution.  The engine's
@@ -80,7 +80,12 @@ impl ResourceLimiter for StoreData {
         Ok(desired <= MAX_MEMORY_BYTES && desired >= current)
     }
 
-    fn table_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> Result<bool> {
+    fn table_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
+    ) -> Result<bool> {
         Ok(desired <= MAX_TABLE_ELEMENTS && desired >= current)
     }
 }
@@ -95,13 +100,11 @@ impl WasmVm {
         config.wasm_threads(false);
         config.wasm_bulk_memory(true);
         config.wasm_multi_value(true);
-        // Limit maximum WASM memory to 16MB (256 pages × 64KB) to prevent OOM
-        config.static_memory_maximum_size(16 * 1024 * 1024);
+        // StoreData::memory_growing caps WASM memory at 16MB (256 pages × 64KB).
         config.cranelift_opt_level(OptLevel::Speed);
         // Limit WASM call stack depth to 512KB to prevent stack-overflow DoS.
         config.max_wasm_stack(512 * 1024);
-        // Dynamic memory guard size; static_memory_maximum_size caps growth.
-        config.dynamic_memory_guard_size(64 * 1024);
+        config.memory_guard_size(64 * 1024);
 
         let engine = Engine::new(&config)
             .map_err(|e| anyhow::anyhow!("failed to create Wasmtime engine: {e}"))?;
