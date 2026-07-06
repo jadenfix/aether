@@ -588,7 +588,7 @@ mod tests {
             .expires_at_slot(100)
             .chain_id(1)
             .side_effect(SideEffect::Purchase)
-            .signature(sig("aether/payment/v1"))
+            .signature(sig(aether_agent_schema::PAYMENT_SIGNATURE_DOMAIN))
             .build(10)
             .unwrap_err();
 

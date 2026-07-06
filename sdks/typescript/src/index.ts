@@ -3,11 +3,13 @@ export { Transaction } from "./transaction.js";
 export { TransferBuilder, JobBuilder } from "./builders.js";
 export { AetherSubscription } from "./subscriptions.js";
 export {
+  AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
   AETHER_PAYMENT_HASH_HEADER,
   AETHER_PAYMENT_HEADER,
   AETHER_PAYMENT_SCHEME,
   PAYMENT_AUTHORIZATION_DOMAIN,
   PAYMENT_ENVELOPE_DOMAIN,
+  PAYMENT_SIGNATURE_DOMAIN,
   attachPaymentSignature,
   buildPaymentRequiredResponse,
   buildUnsignedPaymentEnvelope,

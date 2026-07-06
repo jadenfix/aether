@@ -5,7 +5,7 @@ use aether_sdk::{
     journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentAuthorizationBuilder,
     AgentRunId, JournalRoot, PaymentEnvelope, PaymentEnvelopeBuilder, SettlementPolicy, SideEffect,
     SignatureEnvelope, SignatureEnvelopeBuilder, SigningAlgorithm, StepKind, StepReceiptBuilder,
-    StepReceiptSigningPayload, STEP_RECEIPT_SIGNATURE_DOMAIN,
+    StepReceiptSigningPayload, PAYMENT_SIGNATURE_DOMAIN, STEP_RECEIPT_SIGNATURE_DOMAIN,
 };
 use aether_types::{Address, H256};
 use anyhow::Result;
@@ -47,7 +47,7 @@ fn signature(domain: &str, payload_hash: H256) -> SignatureEnvelope {
 fn payment_signature(session_key: &Keypair, payment: &PaymentEnvelope) -> SignatureEnvelope {
     let payload_hash = payment.signing_payload_hash().unwrap();
     SignatureEnvelopeBuilder::new()
-        .domain("aether/payment/v1")
+        .domain(PAYMENT_SIGNATURE_DOMAIN)
         .chain_id(payment.chain_id)
         .key_id("agent-session")
         .payload_hash(payload_hash)
@@ -145,7 +145,7 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
         .expires_at_slot(1_000)
         .chain_id(1)
         .side_effect(SideEffect::Purchase)
-        .signature(signature("aether/payment/v1", H256::zero()))
+        .signature(signature(PAYMENT_SIGNATURE_DOMAIN, H256::zero()))
         .build(10)
         .unwrap();
     let payment = PaymentEnvelopeBuilder::new()
