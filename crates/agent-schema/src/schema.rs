@@ -12,12 +12,21 @@ pub fn agent_contract_schema() -> Value {
         "title": "Aether Agent Settlement Schema",
         "type": "object",
         "additionalProperties": false,
-        "required": ["signatureEnvelope", "agentAuthorization", "stepReceipt", "paymentEnvelope"],
+        "required": [
+            "signatureEnvelope",
+            "agentAuthorization",
+            "stepReceipt",
+            "runStatus",
+            "settlementPolicy",
+            "paymentEnvelope"
+        ],
         "properties": {
             "signatureEnvelope": { "$ref": "#/$defs/SignatureEnvelope" },
             "agentAuthorization": { "$ref": "#/$defs/AgentAuthorization" },
             "stepReceipt": { "$ref": "#/$defs/StepReceipt" },
             "journalProof": { "$ref": "#/$defs/JournalProof" },
+            "runStatus": { "$ref": "#/$defs/RunStatus" },
+            "settlementPolicy": { "$ref": "#/$defs/SettlementPolicy" },
             "paymentEnvelope": { "$ref": "#/$defs/PaymentEnvelope" }
         },
         "$defs": {
@@ -59,11 +68,18 @@ pub fn agent_contract_schema() -> Value {
                 "type": "string",
                 "enum": ["aic", "swr"]
             },
+            "RunStatus": {
+                "type": "string",
+                "enum": ["running", "completed", "failed", "needs_review", "disputed"]
+            },
             "MerkleSide": {
                 "type": "string",
                 "enum": ["left", "right"]
             },
             "AgentRunId": {
+                "$ref": "#/$defs/H256"
+            },
+            "JournalRoot": {
                 "$ref": "#/$defs/H256"
             },
             "SignatureEnvelope": {
@@ -101,7 +117,6 @@ pub fn agent_contract_schema() -> Value {
                     "allowed_tools",
                     "allowed_recipients",
                     "policy_hash",
-                    "guardian_public_key",
                     "signature"
                 ],
                 "properties": {
@@ -135,6 +150,22 @@ pub fn agent_contract_schema() -> Value {
                     "signature": { "$ref": "#/$defs/SignatureEnvelope" }
                 }
             },
+            "SettlementPolicy": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "min_escrow_aic",
+                    "challenge_slots"
+                ],
+                "properties": {
+                    "min_escrow_aic": { "type": "integer", "minimum": 0 },
+                    "challenge_slots": { "type": "integer", "minimum": 0 },
+                    "requires_human_confirm": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                }
+            },
             "StepReceipt": {
                 "type": "object",
                 "additionalProperties": false,
@@ -145,7 +176,7 @@ pub fn agent_contract_schema() -> Value {
                     "side_effect",
                     "request_hash",
                     "result_hash",
-                    "tool_identity",
+                    "tool_use_id",
                     "signer",
                     "signature"
                 ],
@@ -162,7 +193,11 @@ pub fn agent_contract_schema() -> Value {
                     "evidence_uri_hash": {
                         "anyOf": [{ "$ref": "#/$defs/H256" }, { "type": "null" }]
                     },
-                    "tool_identity": { "type": "string", "minLength": 1 },
+                    "tool_use_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Stable tool-use identifier from the agent runtime journal"
+                    },
                     "signer": { "$ref": "#/$defs/H160" },
                     "signature": { "$ref": "#/$defs/SignatureEnvelope" }
                 }
@@ -219,7 +254,7 @@ pub fn agent_contract_schema() -> Value {
                     "expires_at_slot": { "type": "integer", "minimum": 1 },
                     "chain_id": { "type": "integer", "minimum": 1 },
                     "side_effect": { "$ref": "#/$defs/SideEffect" },
-                    "max_replays": { "type": "integer", "minimum": 1 },
+                    "max_replays": { "type": "integer", "minimum": 1, "default": 1 },
                     "signature": { "$ref": "#/$defs/SignatureEnvelope" }
                 }
             }
@@ -248,6 +283,10 @@ mod tests {
             "StepReceipt",
             "JournalProof",
             "PaymentEnvelope",
+            "AgentRunId",
+            "JournalRoot",
+            "RunStatus",
+            "SettlementPolicy",
             "SideEffect",
             "StepKind",
         ] {
@@ -274,5 +313,25 @@ mod tests {
                 "missing required SignatureEnvelope field {field}"
             );
         }
+    }
+
+    #[test]
+    fn schema_publishes_tool_use_id_as_the_step_receipt_canonical_field() {
+        let schema = agent_contract_schema();
+        let required = schema["$defs"]["StepReceipt"]["required"]
+            .as_array()
+            .expect("required fields must be an array");
+        assert!(required
+            .iter()
+            .any(|value| value.as_str() == Some("tool_use_id")));
+        assert!(!required
+            .iter()
+            .any(|value| value.as_str() == Some("tool_identity")));
+        assert!(schema["$defs"]["StepReceipt"]["properties"]
+            .get("tool_use_id")
+            .is_some());
+        assert!(schema["$defs"]["StepReceipt"]["properties"]
+            .get("tool_identity")
+            .is_none());
     }
 }

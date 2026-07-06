@@ -4,8 +4,10 @@
 //! Concrete signing, FROST, post-quantum, TEE, and zk verification live in
 //! crypto/verifier crates that consume these envelopes.
 
+#![recursion_limit = "256"]
+
 use aether_types::{Address, Slot, H256};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 pub mod schema;
@@ -88,8 +90,11 @@ pub struct SignatureEnvelope {
     pub domain: String,
     pub chain_id: u64,
     pub key_id: String,
+    #[serde(with = "wire::h256")]
     pub payload_hash: H256,
+    #[serde(with = "wire::bytes")]
     pub signature: Vec<u8>,
+    #[serde(default, with = "wire::option_bytes")]
     pub pq_signature: Option<Vec<u8>>,
 }
 
@@ -175,7 +180,7 @@ pub enum RunStatus {
     Disputed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AgentRunId(pub [u8; 32]);
 
 impl AgentRunId {
@@ -183,10 +188,95 @@ impl AgentRunId {
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+impl Default for AgentRunId {
+    fn default() -> Self {
+        Self([0u8; 32])
+    }
+}
+
+impl Serialize for AgentRunId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&wire::encode_hex(&self.0))
+        } else {
+            self.0.serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentRunId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let encoded = String::deserialize(deserializer)?;
+            let bytes = wire::decode_fixed_hex::<32>(&encoded).map_err(serde::de::Error::custom)?;
+            Ok(Self(bytes))
+        } else {
+            <[u8; 32]>::deserialize(deserializer).map(Self)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct JournalRoot(pub H256);
+
+impl Default for JournalRoot {
+    fn default() -> Self {
+        Self(H256::zero())
+    }
+}
+
+impl JournalRoot {
+    #[must_use]
+    pub const fn new(hash: H256) -> Self {
+        Self(hash)
+    }
+
+    #[must_use]
+    pub const fn as_hash(&self) -> H256 {
+        self.0
+    }
+}
+
+impl Serialize for JournalRoot {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&wire::encode_hex(self.0.as_bytes()))
+        } else {
+            self.0.serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for JournalRoot {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let encoded = String::deserialize(deserializer)?;
+            let bytes = wire::decode_fixed_hex::<32>(&encoded).map_err(serde::de::Error::custom)?;
+            Ok(Self(H256::from(bytes)))
+        } else {
+            H256::deserialize(deserializer).map(Self)
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -198,11 +288,13 @@ pub enum MerkleSide {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JournalProofNode {
     pub side: MerkleSide,
+    #[serde(with = "wire::h256")]
     pub hash: H256,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JournalProof {
+    #[serde(with = "wire::h256")]
     pub leaf_hash: H256,
     pub leaf_index: u64,
     pub leaf_count: u64,
@@ -235,23 +327,32 @@ impl JournalProof {
 pub struct SettlementPolicy {
     pub min_escrow_aic: u128,
     pub challenge_slots: u64,
+    #[serde(default)]
     pub requires_human_confirm: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentAuthorization {
+    #[serde(with = "wire::address")]
     pub agent_account: Address,
+    #[serde(with = "wire::bytes")]
     pub session_public_key: Vec<u8>,
+    #[serde(with = "wire::address")]
     pub delegated_by: Address,
     pub valid_from_slot: Slot,
     pub valid_until_slot: Slot,
     pub max_aic: u128,
     pub max_per_call_aic: u128,
     pub allowed_side_effects: Vec<SideEffect>,
+    #[serde(default)]
     pub allowed_tools: Vec<String>,
+    #[serde(default, with = "wire::address_vec")]
     pub allowed_recipients: Vec<Address>,
+    #[serde(with = "wire::h256")]
     pub policy_hash: H256,
+    #[serde(default)]
     pub guardian_threshold: Option<u16>,
+    #[serde(default, with = "wire::option_bytes")]
     pub guardian_public_key: Option<Vec<u8>>,
     pub signature: SignatureEnvelope,
 }
@@ -291,13 +392,19 @@ impl AgentAuthorization {
 pub struct StepReceipt {
     pub run_id: AgentRunId,
     pub seq: u64,
+    #[serde(default, with = "wire::option_h256")]
     pub prev_receipt_hash: Option<H256>,
     pub kind: StepKind,
     pub side_effect: SideEffect,
+    #[serde(with = "wire::h256")]
     pub request_hash: H256,
+    #[serde(with = "wire::h256")]
     pub result_hash: H256,
+    #[serde(default, with = "wire::option_h256")]
     pub evidence_uri_hash: Option<H256>,
-    pub tool_identity: String,
+    #[serde(alias = "tool_identity")]
+    pub tool_use_id: String,
+    #[serde(with = "wire::address")]
     pub signer: Address,
     pub signature: SignatureEnvelope,
 }
@@ -308,7 +415,7 @@ impl StepReceipt {
         if self.seq == 0 {
             return Err(AgentSchemaError::InvalidReceiptSequence);
         }
-        if self.tool_identity.trim().is_empty() {
+        if self.tool_use_id.trim().is_empty() {
             return Err(AgentSchemaError::EmptyToolIdentity);
         }
         Ok(())
@@ -330,14 +437,20 @@ pub enum PaymentToken {
 pub struct PaymentEnvelope {
     pub token: PaymentToken,
     pub amount: u128,
+    #[serde(with = "wire::address")]
     pub recipient: Address,
+    #[serde(with = "wire::h256")]
     pub quote_hash: H256,
+    #[serde(with = "wire::h256")]
     pub request_hash: H256,
+    #[serde(default, with = "wire::option_h256")]
     pub result_hash: Option<H256>,
+    #[serde(with = "wire::bytes32")]
     pub nonce: [u8; 32],
     pub expires_at_slot: Slot,
     pub chain_id: u64,
     pub side_effect: SideEffect,
+    #[serde(default = "default_max_replays")]
     pub max_replays: u32,
     pub signature: SignatureEnvelope,
 }
@@ -386,6 +499,10 @@ impl PaymentEnvelope {
             },
         )
     }
+}
+
+fn default_max_replays() -> u32 {
+    1
 }
 
 #[derive(Serialize)]
@@ -511,10 +628,280 @@ fn validate_chain_id(chain_id: u64) -> Result<(), AgentSchemaError> {
     Ok(())
 }
 
+mod wire {
+    use super::*;
+
+    pub(super) fn encode_hex(bytes: &[u8]) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut encoded = String::with_capacity(2 + bytes.len() * 2);
+        encoded.push_str("0x");
+        for byte in bytes {
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+        encoded
+    }
+
+    pub(super) fn decode_fixed_hex<const N: usize>(encoded: &str) -> Result<[u8; N], String> {
+        let bytes = decode_hex(encoded)?;
+        if bytes.len() != N {
+            return Err(format!("expected {N} bytes, got {}", bytes.len()));
+        }
+        let mut out = [0u8; N];
+        out.copy_from_slice(&bytes);
+        Ok(out)
+    }
+
+    fn decode_hex(encoded: &str) -> Result<Vec<u8>, String> {
+        let body = encoded
+            .strip_prefix("0x")
+            .ok_or_else(|| "hex value must start with 0x".to_string())?;
+        if body.len() % 2 != 0 {
+            return Err("hex value must contain an even number of digits".to_string());
+        }
+
+        let mut out = Vec::with_capacity(body.len() / 2);
+        for pair in body.as_bytes().chunks(2) {
+            let high = decode_nibble(pair[0])
+                .ok_or_else(|| format!("invalid hex digit '{}'", pair[0] as char))?;
+            let low = decode_nibble(pair[1])
+                .ok_or_else(|| format!("invalid hex digit '{}'", pair[1] as char))?;
+            out.push((high << 4) | low);
+        }
+        Ok(out)
+    }
+
+    fn decode_nibble(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    pub(super) mod h256 {
+        use super::*;
+
+        pub fn serialize<S>(value: &H256, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                serializer.serialize_str(&encode_hex(value.as_bytes()))
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<H256, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = String::deserialize(deserializer)?;
+                let bytes = decode_fixed_hex::<32>(&encoded).map_err(serde::de::Error::custom)?;
+                Ok(H256::from(bytes))
+            } else {
+                H256::deserialize(deserializer)
+            }
+        }
+    }
+
+    pub(super) mod option_h256 {
+        use super::*;
+
+        pub fn serialize<S>(value: &Option<H256>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                match value {
+                    Some(hash) => serializer.serialize_some(&encode_hex(hash.as_bytes())),
+                    None => serializer.serialize_none(),
+                }
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<H256>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = Option::<String>::deserialize(deserializer)?;
+                encoded
+                    .map(|value| {
+                        decode_fixed_hex::<32>(&value)
+                            .map(H256::from)
+                            .map_err(serde::de::Error::custom)
+                    })
+                    .transpose()
+            } else {
+                Option::<H256>::deserialize(deserializer)
+            }
+        }
+    }
+
+    pub(super) mod address {
+        use super::*;
+
+        pub fn serialize<S>(value: &Address, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                serializer.serialize_str(&encode_hex(value.as_bytes()))
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Address, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = String::deserialize(deserializer)?;
+                let bytes = decode_fixed_hex::<20>(&encoded).map_err(serde::de::Error::custom)?;
+                Ok(Address::from(bytes))
+            } else {
+                Address::deserialize(deserializer)
+            }
+        }
+    }
+
+    pub(super) mod address_vec {
+        use super::*;
+
+        pub fn serialize<S>(value: &Vec<Address>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                let encoded: Vec<String> = value
+                    .iter()
+                    .map(|address| encode_hex(address.as_bytes()))
+                    .collect();
+                encoded.serialize(serializer)
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Address>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = Vec::<String>::deserialize(deserializer)?;
+                encoded
+                    .into_iter()
+                    .map(|value| {
+                        decode_fixed_hex::<20>(&value)
+                            .map(Address::from)
+                            .map_err(serde::de::Error::custom)
+                    })
+                    .collect()
+            } else {
+                Vec::<Address>::deserialize(deserializer)
+            }
+        }
+    }
+
+    pub(super) mod bytes {
+        use super::*;
+
+        pub fn serialize<S>(value: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                serializer.serialize_str(&encode_hex(value))
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = String::deserialize(deserializer)?;
+                decode_hex(&encoded).map_err(serde::de::Error::custom)
+            } else {
+                Vec::<u8>::deserialize(deserializer)
+            }
+        }
+    }
+
+    pub(super) mod option_bytes {
+        use super::*;
+
+        pub fn serialize<S>(value: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                match value {
+                    Some(bytes) => serializer.serialize_some(&encode_hex(bytes)),
+                    None => serializer.serialize_none(),
+                }
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = Option::<String>::deserialize(deserializer)?;
+                encoded
+                    .map(|value| decode_hex(&value).map_err(serde::de::Error::custom))
+                    .transpose()
+            } else {
+                Option::<Vec<u8>>::deserialize(deserializer)
+            }
+        }
+    }
+
+    pub(super) mod bytes32 {
+        use super::*;
+
+        pub fn serialize<S>(value: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                serializer.serialize_str(&encode_hex(value))
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = String::deserialize(deserializer)?;
+                decode_fixed_hex::<32>(&encoded).map_err(serde::de::Error::custom)
+            } else {
+                <[u8; 32]>::deserialize(deserializer)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use serde_json::{json, Value};
 
     fn h(byte: u8) -> H256 {
         H256::from([byte; 32])
@@ -534,6 +921,26 @@ mod tests {
             vec![9; 64],
             None,
         )
+    }
+
+    fn hex(byte: u8, len: usize) -> String {
+        let mut encoded = String::from("0x");
+        for _ in 0..len {
+            encoded.push_str(&format!("{byte:02x}"));
+        }
+        encoded
+    }
+
+    fn sig_json() -> Value {
+        json!({
+            "alg": "ed25519",
+            "domain": "aether/test/v1",
+            "chain_id": 1,
+            "key_id": "session-key",
+            "payload_hash": hex(7, 32),
+            "signature": hex(9, 64),
+            "pq_signature": null
+        })
     }
 
     #[test]
@@ -633,6 +1040,126 @@ mod tests {
             payment.validate(20),
             Err(AgentSchemaError::MissingResultBinding)
         );
+    }
+
+    #[test]
+    fn enum_json_values_match_ecosystem_contract() {
+        assert_eq!(
+            serde_json::to_string(&StepKind::LlmCall).unwrap(),
+            "\"llm_call\""
+        );
+        assert_eq!(
+            serde_json::to_string(&StepKind::ToolCall).unwrap(),
+            "\"tool_call\""
+        );
+        assert_eq!(
+            serde_json::to_string(&StepKind::BrowseAct).unwrap(),
+            "\"browse_act\""
+        );
+        assert_eq!(
+            serde_json::to_string(&StepKind::SandboxExec).unwrap(),
+            "\"sandbox_exec\""
+        );
+        assert_eq!(
+            serde_json::to_string(&StepKind::McpCall).unwrap(),
+            "\"mcp_call\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SideEffect::Read).unwrap(),
+            "\"read\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SideEffect::Draft).unwrap(),
+            "\"draft\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SideEffect::Write).unwrap(),
+            "\"write\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SideEffect::Send).unwrap(),
+            "\"send\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SideEffect::Purchase).unwrap(),
+            "\"purchase\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SideEffect::Delete).unwrap(),
+            "\"delete\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RunStatus::NeedsReview).unwrap(),
+            "\"needs_review\""
+        );
+    }
+
+    #[test]
+    fn step_receipt_json_uses_canonical_hex_and_tool_use_id() {
+        let receipt = StepReceipt {
+            run_id: AgentRunId::new([0x2a; 32]),
+            seq: 9,
+            prev_receipt_hash: Some(h(2)),
+            kind: StepKind::ToolCall,
+            side_effect: SideEffect::Write,
+            request_hash: h(3),
+            result_hash: h(4),
+            evidence_uri_hash: Some(h(5)),
+            tool_use_id: "browser.checkout#1".to_string(),
+            signer: addr(6),
+            signature: sig(),
+        };
+
+        let value = serde_json::to_value(&receipt).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "run_id": hex(0x2a, 32),
+                "seq": 9,
+                "prev_receipt_hash": hex(2, 32),
+                "kind": "tool_call",
+                "side_effect": "write",
+                "request_hash": hex(3, 32),
+                "result_hash": hex(4, 32),
+                "evidence_uri_hash": hex(5, 32),
+                "tool_use_id": "browser.checkout#1",
+                "signer": hex(6, 20),
+                "signature": sig_json()
+            })
+        );
+
+        let mut legacy_value = value;
+        let object = legacy_value.as_object_mut().unwrap();
+        let tool = object.remove("tool_use_id").unwrap();
+        object.insert("tool_identity".to_string(), tool);
+        let parsed: StepReceipt = serde_json::from_value(legacy_value).unwrap();
+        assert_eq!(parsed.tool_use_id, "browser.checkout#1");
+        assert_eq!(parsed.prev_receipt_hash, Some(h(2)));
+    }
+
+    #[test]
+    fn payment_json_defaults_missing_optional_compat_fields() {
+        let payment: PaymentEnvelope = serde_json::from_value(json!({
+            "token": "aic",
+            "amount": 10,
+            "recipient": hex(1, 20),
+            "quote_hash": hex(2, 32),
+            "request_hash": hex(3, 32),
+            "nonce": hex(4, 32),
+            "expires_at_slot": 100,
+            "chain_id": 1,
+            "side_effect": "read",
+            "signature": sig_json()
+        }))
+        .unwrap();
+
+        assert_eq!(payment.max_replays, 1);
+        assert!(payment.result_hash.is_none());
+        payment.validate(20).unwrap();
+
+        let value = serde_json::to_value(&payment).unwrap();
+        assert_eq!(value["max_replays"], json!(1));
+        assert_eq!(value["result_hash"], Value::Null);
     }
 
     #[test]
@@ -738,7 +1265,7 @@ mod tests {
                 request_hash: h(3),
                 result_hash: h(4),
                 evidence_uri_hash: Some(h(5)),
-                tool_identity: "beater.js/tool".to_string(),
+                tool_use_id: "beater.js/tool".to_string(),
                 signer: addr(6),
                 signature: sig(),
             };
