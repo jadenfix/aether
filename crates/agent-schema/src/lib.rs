@@ -229,6 +229,11 @@ impl<'de> Deserialize<'de> for AgentRunId {
     }
 }
 
+/// Count-bound Merkle commitment over ordered step receipt hashes.
+///
+/// The public root is not the raw padded binary Merkle root. It is
+/// `H("aether/agent_journal_root/v1" || 0x00 || leaf_count_le || raw_root)`,
+/// so an odd-length journal cannot share a root with its padded next length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct JournalRoot(pub H256);
 
@@ -337,7 +342,7 @@ impl JournalProof {
             return Err(AgentSchemaError::InvalidJournalProof);
         }
 
-        if hash == root.0 {
+        if journal_root_commitment(self.leaf_count, hash) == root.0 {
             Ok(())
         } else {
             Err(AgentSchemaError::InvalidJournalProof)
@@ -630,7 +635,10 @@ pub fn journal_root_from_receipt_hashes(
     if receipt_hashes.is_empty() {
         return Err(AgentSchemaError::EmptyJournal);
     }
-    Ok(JournalRoot(journal_root_hash(receipt_hashes)))
+    Ok(JournalRoot(journal_root_commitment(
+        receipt_hashes.len() as u64,
+        raw_journal_merkle_root(receipt_hashes),
+    )))
 }
 
 pub fn journal_proof(
@@ -675,12 +683,23 @@ pub fn journal_proof(
     })
 }
 
-fn journal_root_hash(receipt_hashes: &[H256]) -> H256 {
+fn raw_journal_merkle_root(receipt_hashes: &[H256]) -> H256 {
     let mut level = receipt_hashes.to_vec();
     while level.len() > 1 {
         level = journal_next_level(&level);
     }
     level[0]
+}
+
+fn journal_root_commitment(leaf_count: u64, raw_merkle_root: H256) -> H256 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"aether/agent_journal_root/v1");
+    hasher.update(&[0]);
+    hasher.update(&leaf_count.to_le_bytes());
+    hasher.update(raw_merkle_root.as_bytes());
+    let mut out = [0u8; 32];
+    out.copy_from_slice(hasher.finalize().as_bytes());
+    H256::from(out)
 }
 
 fn journal_next_level(level: &[H256]) -> Vec<H256> {
@@ -1498,6 +1517,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn journal_root_commits_to_odd_leaf_count_not_only_padded_merkle_root() {
+        let three_leaves = [h(1), h(2), h(3)];
+        let four_leaves = [h(1), h(2), h(3), h(3)];
+        let three_root = journal_root_from_receipt_hashes(&three_leaves).unwrap();
+        let four_root = journal_root_from_receipt_hashes(&four_leaves).unwrap();
+        assert_ne!(
+            three_root, four_root,
+            "public journal root must commit to leaf_count, not only the padded raw Merkle root"
+        );
+
+        let proof = journal_proof(&three_leaves, 2).unwrap();
+        proof.verify(three_root).unwrap();
+
+        let mut relabelled_count = proof;
+        relabelled_count.leaf_count = 4;
+        assert_eq!(
+            relabelled_count.verify(three_root),
+            Err(AgentSchemaError::InvalidJournalProof)
+        );
     }
 
     #[test]

@@ -81,7 +81,8 @@ pub fn agent_contract_schema() -> Value {
                 "$ref": "#/$defs/H256"
             },
             "JournalRoot": {
-                "$ref": "#/$defs/H256"
+                "allOf": [{ "$ref": "#/$defs/H256" }],
+                "description": "32-byte journal commitment H(aether/agent_journal_root/v1 || leaf_count || raw padded Merkle root), encoded as 0x-prefixed hex"
             },
             "SignatureEnvelope": {
                 "type": "object",
