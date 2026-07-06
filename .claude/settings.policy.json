@@ -1,0 +1,24 @@
+{
+  "model": "claude-opus-4-6",
+  "sandbox": {
+    "enabled": true,
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "crates.io",
+        "registry.npmjs.org",
+        "pypi.org",
+        "docs.rs"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "cargo publish",
+      "npm publish",
+      "kubectl",
+      "git push --force",
+      "wget"
+    ]
+  }
+}

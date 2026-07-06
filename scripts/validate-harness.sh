@@ -65,14 +65,25 @@ echo -e "${BOLD}================================================================
 tier "12" "Harness Self-Validation (HARD STOP)"
 # ============================================================================
 
-SETTINGS_FILE=".claude/settings.local.json"
+LOCAL_SETTINGS_FILE=".claude/settings.local.json"
+POLICY_SETTINGS_FILE=".claude/settings.policy.json"
+SETTINGS_FILE=""
+SETTINGS_LABEL=""
 
-if [ -f "$SETTINGS_FILE" ]; then
+if [ -f "$LOCAL_SETTINGS_FILE" ]; then
+    SETTINGS_FILE="$LOCAL_SETTINGS_FILE"
+    SETTINGS_LABEL="settings.local.json"
+elif [ -f "$POLICY_SETTINGS_FILE" ]; then
+    SETTINGS_FILE="$POLICY_SETTINGS_FILE"
+    SETTINGS_LABEL="settings.policy.json"
+fi
+
+if [ -n "$SETTINGS_FILE" ]; then
     # JSON validity
     if jq . "$SETTINGS_FILE" >/dev/null 2>&1; then
-        log_pass "12.1  settings.local.json is valid JSON"
+        log_pass "12.1  $SETTINGS_LABEL is valid JSON"
     else
-        log_hard "12.1  settings.local.json is NOT valid JSON"
+        log_hard "12.1  $SETTINGS_LABEL is NOT valid JSON"
     fi
 
     # Model is opus 4.6
@@ -89,9 +100,9 @@ if [ -f "$SETTINGS_FILE" ]; then
         log_hard "12.3  Sandbox is NOT enabled"
     fi
 else
-    log_skip "12.1  settings.local.json is operator-local and not tracked"
-    log_skip "12.2  Model check skipped without local settings"
-    log_skip "12.3  Sandbox check skipped without local settings"
+    log_hard "12.1  Missing tracked settings policy and local settings"
+    log_hard "12.2  Model policy cannot be validated"
+    log_hard "12.3  Sandbox policy cannot be validated"
 fi
 
 # Hook script exists and is executable
@@ -190,7 +201,7 @@ else
 fi
 
 # Permissions sanity: deny list has key entries
-if [ -f "$SETTINGS_FILE" ]; then
+if [ -n "$SETTINGS_FILE" ]; then
     for PATTERN in "cargo publish" "npm publish" "kubectl" "git push --force" "wget"; do
         if jq -r '.permissions.deny[]' "$SETTINGS_FILE" 2>/dev/null | grep -q "$PATTERN"; then
             log_pass "12.xx Deny list contains: $PATTERN"
@@ -208,7 +219,7 @@ if [ -f "$SETTINGS_FILE" ]; then
         fi
     done
 else
-    log_skip "12.xx Local settings deny-list and network allow-list checks skipped"
+    log_hard "12.xx Settings policy unavailable for deny-list and network allow-list checks"
 fi
 
 if [ "$HARD_STOP" -gt 0 ]; then

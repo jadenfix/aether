@@ -197,9 +197,22 @@ cargo run -p aether-cli --bin aetherctl -- --help
 | [Getting Started](GETTING_STARTED.md) | Contributor bootstrap and local workflows |
 | [Contributing](CONTRIBUTING.md) | PR standards and validation flow |
 | [Security](docs/security/AUDIT_SCOPE.md) | Audit scope and security model |
-| [Agent Settlement](docs/ecosystem/aether-agent-settlement.md) | Beater ecosystem compatibility design |
+| [Agent Settlement](docs/ecosystem/aether-agent-settlement.md) | Ecosystem settlement scope and compatibility design |
 | [Runbooks](docs/ops/RUNBOOKS.md) | Operational procedures |
 | [Roadmap](IMPLEMENTATION_ROADMAP.md) | Delivery plan and milestones |
+
+## Ecosystem
+
+Aether is part of the [jadenfix/ecosystem](https://github.com/jadenfix/ecosystem) family of Rust-first, local-first agent infrastructure. It remains fully standalone: a complete L1 with its own consensus, runtime, ledger, SDKs, and tooling. No sibling repository is required for Aether's core value or operation.
+
+Within the ecosystem, Aether's role is frontier settlement. It communicates with sibling projects through explicit protocol artifacts rather than shared internals:
+
+- **Compute settlement:** agent runtimes can submit signed jobs, receipts, verifier outputs, and challenge results through Aether's TEE + VCR verification lane, with escrow settled on-chain.
+- **Attestation anchoring:** beaterOS receipts, beater attestations, and beater-memory provenance can be anchored as transactions or events when both sides ship the matching consumer.
+- **Ecosystem read path:** tempo, beatbox, beater.js, SDKs, dashboards, and agents should consume finalized blocks, JSON-RPC responses, gRPC firehose streams, receipts, and verifier events instead of linking to node internals.
+- **Integration rule:** every connection stays opt-in and contract-bound. A roadmap-only dependency does not become part of Aether's public contract until a real producer and consumer exist on both sides.
+
+See [Agent Settlement](docs/ecosystem/aether-agent-settlement.md) for the detailed compatibility scope, gap analysis, dependency graph, and definition of done.
 
 ## Contributing
 
