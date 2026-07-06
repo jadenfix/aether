@@ -2,7 +2,7 @@
 
 > **This is a design document, not a roadmap.** It describes *what Aether is*, *how it fits with the sibling Beater projects*, *what must change for ecosystem compatibility*, and *how we know each piece is done*. There are no dates. **§4** is the compatibility gap analysis; **§5** is the required change set; **§6** is the dependency graph; **§8** is the Definition of Done.
 
-Aether is a Rust-first L1 with AI-verified compute (TEE + VCR), parallel WASM execution, sub-2s finality, and a dual-token economy (**SWR** staking/governance, **AIC** compute credits). Sibling projects live alongside it under the same workspace root: `../beater`, `../beater.js`, `../tempo`, `../beatbox`, `../beaterOS`.
+Aether is a Rust-first L1 with AI-verified compute (TEE + VCR), parallel WASM execution, sub-2s finality, and a dual-token economy (**SWR** staking/governance, **AIC** compute credits). Sibling projects are indexed from [jadenfix/ecosystem](https://github.com/jadenfix/ecosystem) and integrate through published protocol artifacts, SDKs, and wire contracts rather than shared local paths.
 
 ---
 
@@ -22,11 +22,11 @@ The sibling stack owns **execution**:
 
 | Sibling | Owns |
 | --- | --- |
-| **beater.js** | Web app + durable agent loop + MCP serve + polyglot tools |
-| **tempo** | Structured browser observation/action + machine-web handshake |
-| **beatbox** | Untrusted code sandbox (Wasmtime lanes) |
-| **beater** | Traces, datasets, evals, CI gates, replay cassettes |
-| **beaterOS** | OS-level authority, policy, receipts (future) |
+| **[beater.js](https://github.com/jadenfix/beater.js)** | Web app + durable agent loop + MCP serve + polyglot tools |
+| **[tempo](https://github.com/jadenfix/tempo)** | Structured browser observation/action + machine-web handshake |
+| **[beatbox](https://github.com/jadenfix/beatbox)** | Untrusted code sandbox (Wasmtime lanes) |
+| **[beater](https://github.com/jadenfix/beater)** | Traces, datasets, evals, CI gates, replay cassettes |
+| **[beaterOS](https://github.com/jadenfix/beaterOS)** | OS-level authority, policy, receipts (future) |
 
 **Done** means Aether can settle agent-native work from those systems without re-implementing their runtimes on-chain. The chain holds **escrow, tokens, reputation anchors, and dispute outcomes**; off-chain systems hold **journals, traces, browser state, and eval evidence**.
 
@@ -289,7 +289,7 @@ tempo already probes `.well-known/beater.json` and OpenAPI (client side of beate
 
 ### 5.8 Agent cryptography suite
 
-The best crypto for Aether agents is a **layered suite**, not one replacement primitive. Full analysis and source references live in [docs/security/AGENT_CRYPTO_SOTA.md](./docs/security/AGENT_CRYPTO_SOTA.md).
+The best crypto for Aether agents is a **layered suite**, not one replacement primitive. Full analysis and source references live in [docs/security/AGENT_CRYPTO_SOTA.md](../security/AGENT_CRYPTO_SOTA.md).
 
 | Surface | Required suite | Rationale |
 | --- | --- | --- |
@@ -461,12 +461,12 @@ When multiple agents or teams work in parallel:
 
 | Document | Purpose |
 | --- | --- |
-| [README.md](./README.md) | Project summary and quick start |
-| [docs/architecture.md](./docs/architecture.md) | Current L1 component design |
-| [docs/security/AGENT_CRYPTO_SOTA.md](./docs/security/AGENT_CRYPTO_SOTA.md) | First-principles and SOTA crypto report for agent settlement |
-| [IMPLEMENTATION_ROADMAP.md](./IMPLEMENTATION_ROADMAP.md) | L1 delivery and ops maturity |
-| [config/genesis.toml](./config/genesis.toml) | Chain economics parameters |
-| [../tempo/final.md](../tempo/final.md) | Browser layer; tempo-settle consumer |
-| [../beater.js/final.md](../beater.js/final.md) | Agent runtime; journal source of truth |
-| [../beater.js/crates/beater-connect/ARCHITECTURE.md](../beater.js/crates/beater-connect/ARCHITECTURE.md) | SideEffect and action policy |
-| [../beatbox/ARCHITECTURE.md](../beatbox/ARCHITECTURE.md) | Sandbox execution receipts |
+| [README.md](../../README.md) | Project summary and quick start |
+| [docs/architecture.md](../architecture.md) | Current L1 component design |
+| [docs/security/AGENT_CRYPTO_SOTA.md](../security/AGENT_CRYPTO_SOTA.md) | First-principles and SOTA crypto report for agent settlement |
+| [IMPLEMENTATION_ROADMAP.md](../../IMPLEMENTATION_ROADMAP.md) | L1 delivery and ops maturity |
+| [config/genesis.toml](../../config/genesis.toml) | Chain economics parameters |
+| [../tempo/final.md](https://github.com/jadenfix/tempo/blob/main/final.md) | Browser layer; tempo-settle consumer |
+| [../beater.js/final.md](https://github.com/jadenfix/beater.js/blob/main/final.md) | Agent runtime; journal source of truth |
+| [../beater.js/crates/beater-connect/ARCHITECTURE.md](https://github.com/jadenfix/beater.js/blob/main/crates/beater-connect/ARCHITECTURE.md) | SideEffect and action policy |
+| [../beatbox/ARCHITECTURE.md](https://github.com/jadenfix/beatbox/blob/main/ARCHITECTURE.md) | Sandbox execution receipts |
