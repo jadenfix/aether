@@ -6,6 +6,11 @@ export const AETHER_PAYMENT_SCHEME = "aether-agent-payment-v1";
 export const AETHER_PAYMENT_HEADER = "X-PAYMENT";
 export const AETHER_PAYMENT_HASH_HEADER = "X-AETHER-PAYMENT-HASH";
 
+export const AGENT_AUTHORIZATION_SIGNATURE_DOMAIN =
+  "aether/agent_authorization/v1";
+export const PAYMENT_SIGNATURE_DOMAIN = "aether/payment/v1";
+// Domain for the canonical payment signing payload hash. The signature
+// envelope itself must use PAYMENT_SIGNATURE_DOMAIN.
 export const PAYMENT_AUTHORIZATION_DOMAIN =
   "aether/agent_payment_authorization/v1";
 export const PAYMENT_ENVELOPE_DOMAIN = "aether/agent_payment_envelope/v1";
@@ -189,7 +194,7 @@ export function attachPaymentSignature(
     ...envelope,
     signature: {
       alg: input.alg ?? "ed25519",
-      domain: input.domain ?? PAYMENT_AUTHORIZATION_DOMAIN,
+      domain: input.domain ?? PAYMENT_SIGNATURE_DOMAIN,
       chain_id: input.chainId ?? envelope.chain_id,
       key_id: input.keyId,
       payload_hash: paymentSigningPayloadHash(envelope),
@@ -300,6 +305,9 @@ export function validatePaymentEnvelope(
 ): void {
   validateUnsignedPaymentEnvelope(envelope, currentSlot);
   validateSignatureEnvelope(envelope.signature);
+  if (envelope.signature.domain !== PAYMENT_SIGNATURE_DOMAIN) {
+    throw new Error(`signature domain must be ${PAYMENT_SIGNATURE_DOMAIN}`);
+  }
   if (envelope.signature.chain_id !== envelope.chain_id) {
     throw new Error("signature chain_id must match payment chain_id");
   }

@@ -7,6 +7,7 @@ import {
   AETHER_PAYMENT_HASH_HEADER,
   AETHER_PAYMENT_HEADER,
   AETHER_PAYMENT_SCHEME,
+  PAYMENT_SIGNATURE_DOMAIN,
   attachPaymentSignature,
   buildPaymentRequiredResponse,
   buildUnsignedPaymentEnvelope,
@@ -48,7 +49,6 @@ function signedPayment() {
 
   return attachPaymentSignature(unsigned, {
     keyId: "agent-session-ed25519",
-    domain: "aether/payment/v1",
     signature: `0x${"aa".repeat(64)}`,
   });
 }
@@ -69,6 +69,7 @@ test("payment signing payload excludes signature and changes on settlement field
   const payment = signedPayment();
   const baseline = paymentSigningPayloadHash(payment);
 
+  assert.equal(payment.signature.domain, PAYMENT_SIGNATURE_DOMAIN);
   assert.equal(payment.signature.payload_hash, baseline);
   assert.equal(
     baseline,
@@ -101,6 +102,22 @@ test("payment signing payload excludes signature and changes on settlement field
       result_hash: h("6"),
     }),
     baseline,
+  );
+});
+
+test("payment validation rejects non-canonical signature domains", () => {
+  const payment = signedPayment();
+
+  assert.throws(
+    () =>
+      paymentEnvelopeHash({
+        ...payment,
+        signature: {
+          ...payment.signature,
+          domain: "aether/agent_payment_authorization/v1",
+        },
+      }),
+    /signature domain must be aether\/payment\/v1/,
   );
 });
 
