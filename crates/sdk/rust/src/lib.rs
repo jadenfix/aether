@@ -31,6 +31,7 @@ pub mod agent_identity;
 pub mod client;
 pub mod error;
 pub mod job_builder;
+pub mod payment;
 pub mod transaction_builder;
 pub mod types;
 
@@ -54,6 +55,13 @@ pub use agent_identity::{
 pub use client::AetherClient;
 pub use error::AetherSdkError;
 pub use job_builder::JobBuilder;
+pub use payment::{
+    build_payment_required_response, decode_payment_header, decode_payment_header_at,
+    decode_payment_header_with_hash, encode_payment_header, payment_envelope_hash, payment_headers,
+    validate_payment_envelope, PaymentAcceptExtra, PaymentAcceptOption, PaymentRequiredOptions,
+    PaymentRequiredResponse, AETHER_PAYMENT_HASH_HEADER, AETHER_PAYMENT_HEADER,
+    AETHER_PAYMENT_SCHEME,
+};
 pub use types::{NodeHealth, RpcAccount, RpcBlock, RpcReceipt};
 
 #[cfg(test)]
