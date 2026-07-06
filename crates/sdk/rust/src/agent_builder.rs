@@ -514,6 +514,7 @@ impl Default for PaymentEnvelopeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_agent_schema::{StepReceiptSigningPayload, STEP_RECEIPT_SIGNATURE_DOMAIN};
 
     fn h(byte: u8) -> H256 {
         H256::from([byte; 32])
@@ -534,18 +535,41 @@ mod tests {
             .unwrap()
     }
 
+    fn receipt_sig(payload: &StepReceiptSigningPayload) -> SignatureEnvelope {
+        SignatureEnvelopeBuilder::new()
+            .domain(STEP_RECEIPT_SIGNATURE_DOMAIN)
+            .chain_id(1)
+            .key_id("session")
+            .payload_hash(payload.signing_payload_hash().unwrap())
+            .signature(vec![2; 64])
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn builds_valid_step_receipt() {
+        let payload = StepReceiptSigningPayload {
+            run_id: AgentRunId::new([1; 32]),
+            seq: 1,
+            prev_receipt_hash: None,
+            kind: StepKind::ToolCall,
+            side_effect: SideEffect::Write,
+            request_hash: h(3),
+            result_hash: h(4),
+            evidence_uri_hash: None,
+            tool_use_id: "beater.js/tool".to_string(),
+            signer: addr(5),
+        };
         let receipt = StepReceiptBuilder::new()
-            .run_id(AgentRunId::new([1; 32]))
-            .seq(1)
-            .kind(StepKind::ToolCall)
-            .side_effect(SideEffect::Write)
-            .request_hash(h(3))
-            .result_hash(h(4))
-            .tool_identity("beater.js/tool")
-            .signer(addr(5))
-            .signature(sig("aether/receipt/v1"))
+            .run_id(payload.run_id)
+            .seq(payload.seq)
+            .kind(payload.kind)
+            .side_effect(payload.side_effect)
+            .request_hash(payload.request_hash)
+            .result_hash(payload.result_hash)
+            .tool_use_id(payload.tool_use_id.clone())
+            .signer(payload.signer)
+            .signature(receipt_sig(&payload))
             .build()
             .unwrap();
 

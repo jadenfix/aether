@@ -5,6 +5,7 @@ use aether_sdk::{
     journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentAuthorizationBuilder,
     AgentRunId, JournalRoot, PaymentEnvelope, PaymentEnvelopeBuilder, SettlementPolicy, SideEffect,
     SignatureEnvelope, SignatureEnvelopeBuilder, SigningAlgorithm, StepKind, StepReceiptBuilder,
+    StepReceiptSigningPayload, STEP_RECEIPT_SIGNATURE_DOMAIN,
 };
 use aether_types::{Address, H256};
 use anyhow::Result;
@@ -223,17 +224,32 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
     entry_point.register_account(sender, h(21));
     entry_point.validate_user_op(&op, &AcceptAll).unwrap();
 
+    let receipt_payload = StepReceiptSigningPayload {
+        run_id,
+        seq: 1,
+        prev_receipt_hash: None,
+        kind: StepKind::ToolCall,
+        side_effect: SideEffect::Purchase,
+        request_hash: h(12),
+        result_hash: h(13),
+        evidence_uri_hash: Some(h(16)),
+        tool_use_id: "browser.checkout".to_string(),
+        signer: provider,
+    };
     let receipt = StepReceiptBuilder::new()
-        .run_id(run_id)
-        .seq(1)
-        .kind(StepKind::ToolCall)
-        .side_effect(SideEffect::Purchase)
-        .request_hash(h(12))
-        .result_hash(h(13))
-        .evidence_uri_hash(h(16))
-        .tool_identity("browser.checkout")
-        .signer(provider)
-        .signature(signature("aether/receipt/v1", h(17)))
+        .run_id(receipt_payload.run_id)
+        .seq(receipt_payload.seq)
+        .kind(receipt_payload.kind)
+        .side_effect(receipt_payload.side_effect)
+        .request_hash(receipt_payload.request_hash)
+        .result_hash(receipt_payload.result_hash)
+        .evidence_uri_hash(receipt_payload.evidence_uri_hash.unwrap())
+        .tool_use_id(receipt_payload.tool_use_id.clone())
+        .signer(receipt_payload.signer)
+        .signature(signature(
+            STEP_RECEIPT_SIGNATURE_DOMAIN,
+            receipt_payload.signing_payload_hash().unwrap(),
+        ))
         .build()
         .unwrap();
     let receipt_hash = receipt.receipt_hash().unwrap();

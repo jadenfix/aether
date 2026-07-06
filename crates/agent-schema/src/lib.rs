@@ -14,6 +14,8 @@ pub mod schema;
 pub use schema::agent_contract_schema;
 
 const DOMAIN_PREFIX: &str = "aether/";
+pub const STEP_RECEIPT_SIGNATURE_DOMAIN: &str = "aether/agent_step_receipt/v1";
+pub const STEP_RECEIPT_ENVELOPE_DOMAIN: &str = "aether/agent_step_receipt_envelope/v1";
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AgentSchemaError {
@@ -25,6 +27,10 @@ pub enum AgentSchemaError {
     EmptyKeyId,
     #[error("signature must not be empty")]
     EmptySignature,
+    #[error("signature domain must be {expected}")]
+    InvalidSignatureDomain { expected: &'static str },
+    #[error("signature payload_hash does not match the canonical signing payload")]
+    SignaturePayloadHashMismatch,
     #[error("post-quantum signature is required for {0:?}")]
     MissingPostQuantumSignature(SigningAlgorithm),
     #[error("expiration slot must be greater than the current slot")]
@@ -180,7 +186,7 @@ pub enum RunStatus {
     Disputed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct AgentRunId(pub [u8; 32]);
 
 impl AgentRunId {
@@ -192,12 +198,6 @@ impl AgentRunId {
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
-    }
-}
-
-impl Default for AgentRunId {
-    fn default() -> Self {
-        Self([0u8; 32])
     }
 }
 
@@ -308,11 +308,33 @@ impl JournalProof {
         }
 
         let mut hash = self.leaf_hash;
-        for sibling in &self.siblings {
-            hash = match sibling.side {
+        let mut index = self.leaf_index;
+        let mut width = self.leaf_count;
+        let mut siblings = self.siblings.iter();
+
+        while width > 1 {
+            let sibling = siblings
+                .next()
+                .ok_or(AgentSchemaError::InvalidJournalProof)?;
+            let expected_side = if index % 2 == 0 {
+                MerkleSide::Right
+            } else {
+                MerkleSide::Left
+            };
+            if sibling.side != expected_side {
+                return Err(AgentSchemaError::InvalidJournalProof);
+            }
+
+            hash = match expected_side {
                 MerkleSide::Left => journal_node_hash(sibling.hash, hash),
                 MerkleSide::Right => journal_node_hash(hash, sibling.hash),
             };
+            index /= 2;
+            width = width.div_ceil(2);
+        }
+
+        if siblings.next().is_some() {
+            return Err(AgentSchemaError::InvalidJournalProof);
         }
 
         if hash == root.0 {
@@ -412,17 +434,85 @@ pub struct StepReceipt {
 impl StepReceipt {
     pub fn validate(&self) -> Result<(), AgentSchemaError> {
         self.signature.validate()?;
+        if self.signature.domain != STEP_RECEIPT_SIGNATURE_DOMAIN {
+            return Err(AgentSchemaError::InvalidSignatureDomain {
+                expected: STEP_RECEIPT_SIGNATURE_DOMAIN,
+            });
+        }
         if self.seq == 0 {
             return Err(AgentSchemaError::InvalidReceiptSequence);
         }
         if self.tool_use_id.trim().is_empty() {
             return Err(AgentSchemaError::EmptyToolIdentity);
         }
+        if self.signature.payload_hash != self.signing_payload_hash()? {
+            return Err(AgentSchemaError::SignaturePayloadHashMismatch);
+        }
         Ok(())
     }
 
+    #[must_use]
+    pub fn signing_payload(&self) -> StepReceiptSigningPayload {
+        StepReceiptSigningPayload::from(self)
+    }
+
+    pub fn signing_payload_hash(&self) -> Result<H256, AgentSchemaError> {
+        self.signing_payload().signing_payload_hash()
+    }
+
     pub fn receipt_hash(&self) -> Result<H256, AgentSchemaError> {
-        typed_hash("aether/agent_step_receipt/v1", self)
+        typed_hash(STEP_RECEIPT_ENVELOPE_DOMAIN, self)
+    }
+}
+
+/// Canonical receipt payload signed by an agent runtime.
+///
+/// This payload deliberately excludes the `SignatureEnvelope` so a receipt's
+/// signer commits to the run, step sequence, side-effect class, request/result
+/// hashes, tool-use id, and signer address without recursively signing its own
+/// signature bytes. `StepReceipt::validate` requires the receipt signature
+/// domain to be [`STEP_RECEIPT_SIGNATURE_DOMAIN`] and the envelope
+/// `payload_hash` to match this payload exactly.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepReceiptSigningPayload {
+    pub run_id: AgentRunId,
+    pub seq: u64,
+    #[serde(default, with = "wire::option_h256")]
+    pub prev_receipt_hash: Option<H256>,
+    pub kind: StepKind,
+    pub side_effect: SideEffect,
+    #[serde(with = "wire::h256")]
+    pub request_hash: H256,
+    #[serde(with = "wire::h256")]
+    pub result_hash: H256,
+    #[serde(default, with = "wire::option_h256")]
+    pub evidence_uri_hash: Option<H256>,
+    #[serde(alias = "tool_identity")]
+    pub tool_use_id: String,
+    #[serde(with = "wire::address")]
+    pub signer: Address,
+}
+
+impl StepReceiptSigningPayload {
+    pub fn signing_payload_hash(&self) -> Result<H256, AgentSchemaError> {
+        typed_hash(STEP_RECEIPT_SIGNATURE_DOMAIN, self)
+    }
+}
+
+impl From<&StepReceipt> for StepReceiptSigningPayload {
+    fn from(receipt: &StepReceipt) -> Self {
+        Self {
+            run_id: receipt.run_id,
+            seq: receipt.seq,
+            prev_receipt_hash: receipt.prev_receipt_hash,
+            kind: receipt.kind,
+            side_effect: receipt.side_effect,
+            request_hash: receipt.request_hash,
+            result_hash: receipt.result_hash,
+            evidence_uri_hash: receipt.evidence_uri_hash,
+            tool_use_id: receipt.tool_use_id.clone(),
+            signer: receipt.signer,
+        }
     }
 }
 
@@ -436,6 +526,7 @@ pub enum PaymentToken {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaymentEnvelope {
     pub token: PaymentToken,
+    #[serde(with = "wire::u128_decimal_string")]
     pub amount: u128,
     #[serde(with = "wire::address")]
     pub recipient: Address,
@@ -895,6 +986,48 @@ mod wire {
             }
         }
     }
+
+    pub(super) mod u128_decimal_string {
+        use super::*;
+
+        pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            if serializer.is_human_readable() {
+                serializer.serialize_str(&value.to_string())
+            } else {
+                value.serialize(serializer)
+            }
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            if deserializer.is_human_readable() {
+                let encoded = String::deserialize(deserializer)?;
+                parse_canonical_u128(&encoded).map_err(serde::de::Error::custom)
+            } else {
+                u128::deserialize(deserializer)
+            }
+        }
+
+        fn parse_canonical_u128(encoded: &str) -> Result<u128, String> {
+            if encoded.is_empty() {
+                return Err("amount must not be empty".to_string());
+            }
+            if !encoded.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err("amount must be a base-10 integer string".to_string());
+            }
+            if encoded.len() > 1 && encoded.starts_with('0') {
+                return Err("amount must use canonical decimal form".to_string());
+            }
+            encoded
+                .parse::<u128>()
+                .map_err(|err| format!("amount is outside u128 range: {err}"))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -941,6 +1074,47 @@ mod tests {
             "signature": hex(9, 64),
             "pq_signature": null
         })
+    }
+
+    fn receipt_payload() -> StepReceiptSigningPayload {
+        StepReceiptSigningPayload {
+            run_id: AgentRunId::new([0x2a; 32]),
+            seq: 9,
+            prev_receipt_hash: Some(h(2)),
+            kind: StepKind::ToolCall,
+            side_effect: SideEffect::Write,
+            request_hash: h(3),
+            result_hash: h(4),
+            evidence_uri_hash: Some(h(5)),
+            tool_use_id: "browser.checkout#1".to_string(),
+            signer: addr(6),
+        }
+    }
+
+    fn signed_receipt() -> StepReceipt {
+        let payload = receipt_payload();
+        let payload_hash = payload.signing_payload_hash().unwrap();
+        StepReceipt {
+            run_id: payload.run_id,
+            seq: payload.seq,
+            prev_receipt_hash: payload.prev_receipt_hash,
+            kind: payload.kind,
+            side_effect: payload.side_effect,
+            request_hash: payload.request_hash,
+            result_hash: payload.result_hash,
+            evidence_uri_hash: payload.evidence_uri_hash,
+            tool_use_id: payload.tool_use_id,
+            signer: payload.signer,
+            signature: SignatureEnvelope::new(
+                SigningAlgorithm::Ed25519,
+                STEP_RECEIPT_SIGNATURE_DOMAIN,
+                1,
+                "session-key",
+                payload_hash,
+                vec![9; 64],
+                None,
+            ),
+        }
     }
 
     #[test]
@@ -1043,6 +1217,62 @@ mod tests {
     }
 
     #[test]
+    fn receipt_validation_binds_exact_domain_and_payload_hash() {
+        let receipt = signed_receipt();
+        receipt.validate().unwrap();
+        assert_eq!(
+            receipt.signature.payload_hash,
+            receipt.signing_payload_hash().unwrap()
+        );
+
+        let mut wrong_domain = receipt.clone();
+        wrong_domain.signature.domain = "aether/receipt/v1".to_string();
+        assert_eq!(
+            wrong_domain.validate(),
+            Err(AgentSchemaError::InvalidSignatureDomain {
+                expected: STEP_RECEIPT_SIGNATURE_DOMAIN,
+            })
+        );
+
+        let mut wrong_payload_hash = receipt.clone();
+        wrong_payload_hash.signature.payload_hash = h(99);
+        assert_eq!(
+            wrong_payload_hash.validate(),
+            Err(AgentSchemaError::SignaturePayloadHashMismatch)
+        );
+    }
+
+    #[test]
+    fn receipt_signing_payload_excludes_signature_but_commits_to_fields() {
+        let receipt = signed_receipt();
+        let baseline = receipt.signing_payload_hash().unwrap();
+
+        let mut different_signature_bytes = receipt.clone();
+        different_signature_bytes.signature.signature = vec![0xaa; 64];
+        assert_eq!(
+            different_signature_bytes.signing_payload_hash().unwrap(),
+            baseline
+        );
+        different_signature_bytes.validate().unwrap();
+
+        let mut tampered_request = receipt.clone();
+        tampered_request.request_hash = h(0xee);
+        assert_ne!(tampered_request.signing_payload_hash().unwrap(), baseline);
+        assert_eq!(
+            tampered_request.validate(),
+            Err(AgentSchemaError::SignaturePayloadHashMismatch)
+        );
+
+        let mut tampered_tool_use = receipt;
+        tampered_tool_use.tool_use_id = "browser.checkout#2".to_string();
+        assert_ne!(tampered_tool_use.signing_payload_hash().unwrap(), baseline);
+        assert_eq!(
+            tampered_tool_use.validate(),
+            Err(AgentSchemaError::SignaturePayloadHashMismatch)
+        );
+    }
+
+    #[test]
     fn enum_json_values_match_ecosystem_contract() {
         assert_eq!(
             serde_json::to_string(&StepKind::LlmCall).unwrap(),
@@ -1141,7 +1371,7 @@ mod tests {
     fn payment_json_defaults_missing_optional_compat_fields() {
         let payment: PaymentEnvelope = serde_json::from_value(json!({
             "token": "aic",
-            "amount": 10,
+            "amount": "10",
             "recipient": hex(1, 20),
             "quote_hash": hex(2, 32),
             "request_hash": hex(3, 32),
@@ -1158,8 +1388,23 @@ mod tests {
         payment.validate(20).unwrap();
 
         let value = serde_json::to_value(&payment).unwrap();
+        assert_eq!(value["amount"], json!("10"));
         assert_eq!(value["max_replays"], json!(1));
         assert_eq!(value["result_hash"], Value::Null);
+
+        assert!(serde_json::from_value::<PaymentEnvelope>(json!({
+            "token": "aic",
+            "amount": 10,
+            "recipient": hex(1, 20),
+            "quote_hash": hex(2, 32),
+            "request_hash": hex(3, 32),
+            "nonce": hex(4, 32),
+            "expires_at_slot": 100,
+            "chain_id": 1,
+            "side_effect": "read",
+            "signature": sig_json()
+        }))
+        .is_err());
     }
 
     #[test]
@@ -1230,6 +1475,29 @@ mod tests {
             proof.verify(JournalRoot(h(9))),
             Err(AgentSchemaError::InvalidJournalProof)
         );
+    }
+
+    #[test]
+    fn journal_proof_rejects_relabelled_leaf_index() {
+        let leaves = [h(1), h(2), h(3), h(4), h(5)];
+        let root = journal_root_from_receipt_hashes(&leaves).unwrap();
+
+        for original_index in 0..leaves.len() {
+            let proof = journal_proof(&leaves, original_index).unwrap();
+            proof.verify(root).unwrap();
+            for relabelled_index in 0..leaves.len() {
+                if relabelled_index == original_index {
+                    continue;
+                }
+                let mut relabelled = proof.clone();
+                relabelled.leaf_index = relabelled_index as u64;
+                assert_eq!(
+                    relabelled.verify(root),
+                    Err(AgentSchemaError::InvalidJournalProof),
+                    "proof for index {original_index} validated as {relabelled_index}"
+                );
+            }
+        }
     }
 
     #[test]
