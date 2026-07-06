@@ -636,6 +636,45 @@ mod tests {
     }
 
     #[test]
+    fn payment_hash_fixture_matches_typescript_sdk() {
+        let payment = PaymentEnvelope {
+            token: PaymentToken::Aic,
+            amount: 1_500_000_000_000_000_000,
+            recipient: addr(0x11),
+            quote_hash: h(0x22),
+            request_hash: h(0x33),
+            result_hash: Some(h(0x44)),
+            nonce: [0x55; 32],
+            expires_at_slot: 100,
+            chain_id: 7,
+            side_effect: SideEffect::Purchase,
+            max_replays: 1,
+            signature: SignatureEnvelope::new(
+                SigningAlgorithm::Ed25519,
+                "aether/payment/v1",
+                7,
+                "agent-session-ed25519",
+                H256::from([
+                    0x67, 0xa3, 0x1c, 0xca, 0x14, 0x24, 0x1a, 0x7b, 0x60, 0x47, 0x31, 0x13, 0xee,
+                    0xdb, 0x59, 0x78, 0xff, 0x3c, 0x58, 0x6e, 0x8b, 0xfa, 0xf9, 0xdb, 0xd6, 0xea,
+                    0x8f, 0xf9, 0x2d, 0xbb, 0xe1, 0x31,
+                ]),
+                vec![0xaa; 64],
+                None,
+            ),
+        };
+
+        assert_eq!(
+            format!("{:?}", payment.signing_payload_hash().unwrap()),
+            "0x67a31cca14241a7b60473113eedb5978ff3c586e8bfaf9dbd6ea8ff92dbbe131"
+        );
+        assert_eq!(
+            format!("{:?}", payment.payment_hash().unwrap()),
+            "0x33a399005a30c3c961829c2e4e423d85b61f7f869f9c5cf38369d81d5820bc16"
+        );
+    }
+
+    #[test]
     fn journal_proof_verifies_receipt_inclusion() {
         let leaves = [h(1), h(2), h(3), h(4), h(5)];
         let root = journal_root_from_receipt_hashes(&leaves).unwrap();
