@@ -246,7 +246,7 @@ pub struct StepReceiptBuilder {
     request_hash: Option<H256>,
     result_hash: Option<H256>,
     evidence_uri_hash: Option<H256>,
-    tool_identity: Option<String>,
+    tool_use_id: Option<String>,
     signer: Option<Address>,
     signature: Option<SignatureEnvelope>,
 }
@@ -262,7 +262,7 @@ impl StepReceiptBuilder {
             request_hash: None,
             result_hash: None,
             evidence_uri_hash: None,
-            tool_identity: None,
+            tool_use_id: None,
             signer: None,
             signature: None,
         }
@@ -308,9 +308,13 @@ impl StepReceiptBuilder {
         self
     }
 
-    pub fn tool_identity(mut self, identity: impl Into<String>) -> Self {
-        self.tool_identity = Some(identity.into());
+    pub fn tool_use_id(mut self, tool_use_id: impl Into<String>) -> Self {
+        self.tool_use_id = Some(tool_use_id.into());
         self
+    }
+
+    pub fn tool_identity(self, identity: impl Into<String>) -> Self {
+        self.tool_use_id(identity)
     }
 
     pub fn signer(mut self, signer: Address) -> Self {
@@ -345,9 +349,9 @@ impl StepReceiptBuilder {
                 .result_hash
                 .ok_or_else(|| AetherSdkError::build("result_hash not set"))?,
             evidence_uri_hash: self.evidence_uri_hash,
-            tool_identity: self
-                .tool_identity
-                .ok_or_else(|| AetherSdkError::build("tool_identity not set"))?,
+            tool_use_id: self
+                .tool_use_id
+                .ok_or_else(|| AetherSdkError::build("tool_use_id not set"))?,
             signer: self
                 .signer
                 .ok_or_else(|| AetherSdkError::build("signer not set"))?,
@@ -510,6 +514,7 @@ impl Default for PaymentEnvelopeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_agent_schema::{StepReceiptSigningPayload, STEP_RECEIPT_SIGNATURE_DOMAIN};
 
     fn h(byte: u8) -> H256 {
         H256::from([byte; 32])
@@ -530,18 +535,41 @@ mod tests {
             .unwrap()
     }
 
+    fn receipt_sig(payload: &StepReceiptSigningPayload) -> SignatureEnvelope {
+        SignatureEnvelopeBuilder::new()
+            .domain(STEP_RECEIPT_SIGNATURE_DOMAIN)
+            .chain_id(1)
+            .key_id("session")
+            .payload_hash(payload.signing_payload_hash().unwrap())
+            .signature(vec![2; 64])
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn builds_valid_step_receipt() {
+        let payload = StepReceiptSigningPayload {
+            run_id: AgentRunId::new([1; 32]),
+            seq: 1,
+            prev_receipt_hash: None,
+            kind: StepKind::ToolCall,
+            side_effect: SideEffect::Write,
+            request_hash: h(3),
+            result_hash: h(4),
+            evidence_uri_hash: None,
+            tool_use_id: "beater.js/tool".to_string(),
+            signer: addr(5),
+        };
         let receipt = StepReceiptBuilder::new()
-            .run_id(AgentRunId::new([1; 32]))
-            .seq(1)
-            .kind(StepKind::ToolCall)
-            .side_effect(SideEffect::Write)
-            .request_hash(h(3))
-            .result_hash(h(4))
-            .tool_identity("beater.js/tool")
-            .signer(addr(5))
-            .signature(sig("aether/receipt/v1"))
+            .run_id(payload.run_id)
+            .seq(payload.seq)
+            .kind(payload.kind)
+            .side_effect(payload.side_effect)
+            .request_hash(payload.request_hash)
+            .result_hash(payload.result_hash)
+            .tool_use_id(payload.tool_use_id.clone())
+            .signer(payload.signer)
+            .signature(receipt_sig(&payload))
             .build()
             .unwrap();
 

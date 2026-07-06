@@ -38,6 +38,7 @@ pub use aether_agent_schema::{
     journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentRunId, JournalProof,
     JournalProofNode, JournalRoot, MerkleSide, PaymentEnvelope, PaymentToken, RunStatus,
     SettlementPolicy, SideEffect, SignatureEnvelope, SigningAlgorithm, StepKind, StepReceipt,
+    StepReceiptSigningPayload, STEP_RECEIPT_SIGNATURE_DOMAIN,
 };
 pub use aether_crypto_pq::{
     HybridIdentityProof, MlDsa87Keypair, PqSignatureAlgorithm, PqSignatureEnvelope,
