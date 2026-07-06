@@ -289,7 +289,7 @@ tempo already probes `.well-known/beater.json` and OpenAPI (client side of beate
 
 ### 5.8 Agent cryptography suite
 
-The best crypto for Aether agents is a **layered suite**, not one replacement primitive. Full analysis and source references live in [docs/security/AGENT_CRYPTO_SOTA.md](./docs/security/AGENT_CRYPTO_SOTA.md).
+The best crypto for Aether agents is a **layered suite**, not one replacement primitive. Full analysis and source references live in [docs/security/AGENT_CRYPTO_SOTA.md](../security/AGENT_CRYPTO_SOTA.md).
 
 | Surface | Required suite | Rationale |
 | --- | --- | --- |
@@ -463,10 +463,10 @@ When multiple agents or teams work in parallel:
 | --- | --- |
 | [README.md](../../README.md) | Project summary and quick start |
 | [docs/architecture.md](../architecture.md) | Current L1 component design |
-| [docs/security/AGENT_CRYPTO_SOTA.md](./docs/security/AGENT_CRYPTO_SOTA.md) | First-principles and SOTA crypto report for agent settlement |
+| [docs/security/AGENT_CRYPTO_SOTA.md](../security/AGENT_CRYPTO_SOTA.md) | First-principles and SOTA crypto report for agent settlement |
 | [IMPLEMENTATION_ROADMAP.md](../../IMPLEMENTATION_ROADMAP.md) | L1 delivery and ops maturity |
 | [config/genesis.toml](../../config/genesis.toml) | Chain economics parameters |
 | [../tempo/final.md](https://github.com/jadenfix/tempo/blob/main/final.md) | Browser layer; tempo-settle consumer |
 | [../beater.js/final.md](https://github.com/jadenfix/beater.js/blob/main/final.md) | Agent runtime; journal source of truth |
-| [../beater.js/crates/beater-connect/ARCHITECTURE.md](../beater.js/crates/beater-connect/ARCHITECTURE.md) | SideEffect and action policy |
-| [../beatbox/ARCHITECTURE.md](../beatbox/ARCHITECTURE.md) | Sandbox execution receipts |
+| [../beater.js/crates/beater-connect/ARCHITECTURE.md](https://github.com/jadenfix/beater.js/blob/main/crates/beater-connect/ARCHITECTURE.md) | SideEffect and action policy |
+| [../beatbox/ARCHITECTURE.md](https://github.com/jadenfix/beatbox/blob/main/ARCHITECTURE.md) | Sandbox execution receipts |
