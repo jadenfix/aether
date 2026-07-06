@@ -93,7 +93,7 @@ pub fn agent_contract_schema() -> Value {
                     "domain": {
                         "type": "string",
                         "pattern": "^aether/.+",
-                        "description": "Domain-separated signing context. Agent settlement envelopes use exact object domains: aether/agent_authorization/v1, aether/payment/v1, or aether/agent_step_receipt/v1."
+                        "description": "Domain-separated signing context. Agent settlement envelopes use exact object domains: aether/agent_authorization/v1, aether/agent_payment_authorization/v1, or aether/agent_step_receipt/v1."
                     },
                     "chain_id": { "type": "integer", "minimum": 1 },
                     "key_id": { "type": "string", "minLength": 1 },
@@ -299,7 +299,7 @@ pub fn agent_contract_schema() -> Value {
                     "max_replays": { "type": "integer", "minimum": 1, "default": 1 },
                     "signature": {
                         "allOf": [{ "$ref": "#/$defs/SignatureEnvelope" }],
-                        "description": "Payment authorization envelope. domain must equal aether/payment/v1, chain_id must equal the payment chain_id, and payload_hash must equal PaymentEnvelope.signing_payload_hash."
+                        "description": "Payment authorization envelope. domain must equal aether/agent_payment_authorization/v1, chain_id must equal the payment chain_id, and payload_hash must equal PaymentEnvelope.signing_payload_hash."
                     }
                 }
             }

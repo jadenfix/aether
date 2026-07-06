@@ -77,7 +77,7 @@ test("payment signing payload excludes signature and changes on settlement field
   );
   assert.equal(
     paymentEnvelopeHash(payment),
-    "0x33a399005a30c3c961829c2e4e423d85b61f7f869f9c5cf38369d81d5820bc16",
+    "0x0831ce74c89358835be790d4a7794a2bb30cd7e5968bafb5cc99423ea5f25783",
   );
   assert.equal(
     paymentSigningPayloadHash({
@@ -113,11 +113,11 @@ test("payment validation rejects non-canonical signature domains", () => {
       paymentEnvelopeHash({
         ...payment,
         signature: {
-          ...payment.signature,
-          domain: "aether/agent_payment_authorization/v1",
+        ...payment.signature,
+          domain: "aether/not_payment/v1",
         },
       }),
-    /signature domain must be aether\/payment\/v1/,
+    /signature domain must be aether\/agent_payment_authorization\/v1/,
   );
 });
 

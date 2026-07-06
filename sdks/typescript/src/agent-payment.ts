@@ -8,10 +8,7 @@ export const AETHER_PAYMENT_HASH_HEADER = "X-AETHER-PAYMENT-HASH";
 
 export const AGENT_AUTHORIZATION_SIGNATURE_DOMAIN =
   "aether/agent_authorization/v1";
-export const PAYMENT_SIGNATURE_DOMAIN = "aether/payment/v1";
-// Domain for the canonical payment signing payload hash. The signature
-// envelope itself must use PAYMENT_SIGNATURE_DOMAIN.
-export const PAYMENT_AUTHORIZATION_DOMAIN =
+export const PAYMENT_SIGNATURE_DOMAIN =
   "aether/agent_payment_authorization/v1";
 export const PAYMENT_ENVELOPE_DOMAIN = "aether/agent_payment_envelope/v1";
 
@@ -223,7 +220,7 @@ export function paymentSigningPayloadHash(
   envelope: PaymentEnvelope | UnsignedPaymentEnvelope,
 ): H256 {
   return typedBincodeHash(
-    PAYMENT_AUTHORIZATION_DOMAIN,
+    PAYMENT_SIGNATURE_DOMAIN,
     encodePaymentSigningPayload(paymentSigningPayload(envelope)),
   );
 }

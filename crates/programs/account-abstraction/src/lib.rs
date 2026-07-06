@@ -875,7 +875,7 @@ mod tests {
         op.side_effect = Some(SideEffect::Purchase);
         op.payment = Some(payment(1_000, recipient, &session_key));
         attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
-        op.payment.as_mut().unwrap().signature.domain = "aether/payment/v2".to_string();
+        op.payment.as_mut().unwrap().signature.domain = "aether/not_payment/v1".to_string();
 
         let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
         assert!(err.to_string().contains("payment signature binding"));
@@ -967,6 +967,30 @@ mod tests {
         assert!(err
             .to_string()
             .contains(AGENT_AUTHORIZATION_SIGNATURE_DOMAIN));
+    }
+
+    #[test]
+    fn test_guardian_wrong_payload_hash_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &session_key));
+        attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
+        op.agent_authorization
+            .as_mut()
+            .unwrap()
+            .signature
+            .payload_hash = hash(99);
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("guardian signature binding"));
+        assert!(err.to_string().contains("payload_hash"));
     }
 
     #[test]

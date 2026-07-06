@@ -15,7 +15,7 @@ pub use schema::agent_contract_schema;
 
 const DOMAIN_PREFIX: &str = "aether/";
 pub const AGENT_AUTHORIZATION_SIGNATURE_DOMAIN: &str = "aether/agent_authorization/v1";
-pub const PAYMENT_SIGNATURE_DOMAIN: &str = "aether/payment/v1";
+pub const PAYMENT_SIGNATURE_DOMAIN: &str = "aether/agent_payment_authorization/v1";
 pub const STEP_RECEIPT_SIGNATURE_DOMAIN: &str = "aether/agent_step_receipt/v1";
 pub const STEP_RECEIPT_ENVELOPE_DOMAIN: &str = "aether/agent_step_receipt_envelope/v1";
 
@@ -634,7 +634,7 @@ impl PaymentEnvelope {
 
     pub fn signing_payload_hash(&self) -> Result<H256, AgentSchemaError> {
         typed_hash(
-            "aether/agent_payment_authorization/v1",
+            PAYMENT_SIGNATURE_DOMAIN,
             &PaymentEnvelopeSigningPayload {
                 token: self.token,
                 amount: self.amount,
@@ -1497,7 +1497,7 @@ mod tests {
             max_replays: 1,
             signature: SignatureEnvelope::new(
                 SigningAlgorithm::Ed25519,
-                "aether/payment/v1",
+                PAYMENT_SIGNATURE_DOMAIN,
                 7,
                 "agent-session-ed25519",
                 H256::from([
@@ -1516,7 +1516,7 @@ mod tests {
         );
         assert_eq!(
             format!("{:?}", payment.payment_hash().unwrap()),
-            "0x33a399005a30c3c961829c2e4e423d85b61f7f869f9c5cf38369d81d5820bc16"
+            "0x0831ce74c89358835be790d4a7794a2bb30cd7e5968bafb5cc99423ea5f25783"
         );
     }
 
@@ -1614,7 +1614,7 @@ mod tests {
         fn typed_hash_changes_when_domain_changes(bytes in proptest::array::uniform32(any::<u8>())) {
             let run_id = AgentRunId::new(bytes);
             let a = typed_hash("aether/receipt/v1", &run_id).unwrap();
-            let b = typed_hash("aether/payment/v1", &run_id).unwrap();
+            let b = typed_hash("aether/other/v1", &run_id).unwrap();
             prop_assert_ne!(a, b);
         }
 
