@@ -263,9 +263,8 @@ impl EntryPoint {
                     bail!("high-risk side effect requires FROST guardian signature");
                 }
                 let policy_hash = op.agent_policy_hash();
-                if auth.signature.payload_hash != policy_hash {
-                    bail!("guardian signature payload hash does not match operation policy hash");
-                }
+                auth.validate_guardian_signature_binding(policy_hash)
+                    .map_err(|err| anyhow::anyhow!("guardian signature binding invalid: {err}"))?;
                 let guardian_key = auth
                     .guardian_public_key
                     .as_deref()
@@ -315,14 +314,8 @@ impl EntryPoint {
             bail!("payment signatures currently require Ed25519 session keys");
         }
         let payment_hash = payment
-            .signing_payload_hash()
-            .map_err(|err| anyhow::anyhow!("payment signing payload invalid: {err}"))?;
-        if payment.signature.payload_hash != payment_hash {
-            bail!("payment signature payload hash does not match payment envelope");
-        }
-        if payment.signature.chain_id != payment.chain_id {
-            bail!("payment signature chain_id does not match payment envelope");
-        }
+            .validate_signature_binding()
+            .map_err(|err| anyhow::anyhow!("payment signature binding invalid: {err}"))?;
         verify_ed25519(
             &auth.session_public_key,
             payment_hash.as_bytes(),
@@ -520,7 +513,10 @@ pub struct UserOpResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_agent_schema::{SignatureEnvelope, SigningAlgorithm};
+    use aether_agent_schema::{
+        SignatureEnvelope, SigningAlgorithm, AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
+        PAYMENT_SIGNATURE_DOMAIN,
+    };
     use aether_crypto_primitives::Keypair;
     use frost_ristretto255::{
         aggregate,
@@ -650,7 +646,7 @@ mod tests {
             guardian_public_key: Some(guardian_public_key),
             signature: SignatureEnvelope::new(
                 SigningAlgorithm::FrostRistretto255,
-                "aether/agent_authorization/v1",
+                AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
                 1,
                 "guardian-frost",
                 policy_hash,
@@ -684,7 +680,7 @@ mod tests {
             guardian_public_key: Some(guardian_public_key.clone()),
             signature: SignatureEnvelope::new(
                 SigningAlgorithm::FrostRistretto255,
-                "aether/agent_authorization/v1",
+                AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
                 1,
                 "guardian-frost",
                 H256::zero(),
@@ -723,7 +719,7 @@ mod tests {
             chain_id: 1,
             side_effect: SideEffect::Purchase,
             max_replays: 1,
-            signature: signature_envelope("aether/payment/v1"),
+            signature: signature_envelope(PAYMENT_SIGNATURE_DOMAIN),
         }
     }
 
@@ -733,7 +729,7 @@ mod tests {
         PaymentEnvelope {
             signature: SignatureEnvelope::new(
                 SigningAlgorithm::Ed25519,
-                "aether/payment/v1",
+                PAYMENT_SIGNATURE_DOMAIN,
                 1,
                 "agent-session",
                 payload_hash,
@@ -867,6 +863,134 @@ mod tests {
     }
 
     #[test]
+    fn test_payment_wrong_signature_domain_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &session_key));
+        attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
+        op.payment.as_mut().unwrap().signature.domain = "aether/payment/v2".to_string();
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("payment signature binding"));
+        assert!(err.to_string().contains(PAYMENT_SIGNATURE_DOMAIN));
+    }
+
+    #[test]
+    fn test_payment_wrong_signature_chain_id_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &session_key));
+        attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
+        op.payment.as_mut().unwrap().signature.chain_id = 2;
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("chain_id"));
+    }
+
+    #[test]
+    fn test_payment_wrong_signature_payload_hash_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &session_key));
+        attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
+        op.payment.as_mut().unwrap().signature.payload_hash = hash(99);
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("payload_hash"));
+    }
+
+    #[test]
+    fn test_payment_wrong_session_key_signature_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let authorized_session_key = Keypair::generate();
+        let signing_session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &signing_session_key));
+        attach_valid_purchase_authorization(
+            &mut op,
+            sender,
+            recipient,
+            authorized_session_key.public_key(),
+        );
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("payment Ed25519 verification failed"));
+    }
+
+    #[test]
+    fn test_guardian_wrong_signature_domain_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &session_key));
+        attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
+        op.agent_authorization.as_mut().unwrap().signature.domain =
+            "aether/agent_authorization/v2".to_string();
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err.to_string().contains("signature domain"));
+        assert!(err
+            .to_string()
+            .contains(AGENT_AUTHORIZATION_SIGNATURE_DOMAIN));
+    }
+
+    #[test]
+    fn test_guardian_wrong_frost_signature_rejected_on_live_path() {
+        let mut ep = EntryPoint::new();
+        ep.set_current_slot(10);
+        let sender = address(1);
+        let recipient = address(2);
+        let session_key = Keypair::generate();
+        ep.register_account(sender, H256::zero());
+
+        let mut op = make_user_op(1);
+        op.side_effect = Some(SideEffect::Purchase);
+        op.payment = Some(payment(1_000, recipient, &session_key));
+        attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
+        op.agent_authorization.as_mut().unwrap().signature.signature = vec![0xaa; 64];
+
+        let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("guardian FROST verification failed"));
+    }
+
+    #[test]
     fn test_forged_payment_signature_rejected() {
         let mut ep = EntryPoint::new();
         ep.set_current_slot(10);
@@ -884,7 +1008,7 @@ mod tests {
         attach_valid_purchase_authorization(&mut op, sender, recipient, session_key.public_key());
 
         let err = ep.validate_user_op(&op, &AcceptAll).unwrap_err();
-        assert!(err.to_string().contains("payload hash"));
+        assert!(err.to_string().contains("payload_hash"));
     }
 
     #[test]

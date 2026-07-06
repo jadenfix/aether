@@ -93,7 +93,7 @@ pub fn agent_contract_schema() -> Value {
                     "domain": {
                         "type": "string",
                         "pattern": "^aether/.+",
-                        "description": "Domain-separated signing context"
+                        "description": "Domain-separated signing context. Agent settlement envelopes use exact object domains: aether/agent_authorization/v1, aether/payment/v1, or aether/agent_step_receipt/v1."
                     },
                     "chain_id": { "type": "integer", "minimum": 1 },
                     "key_id": { "type": "string", "minLength": 1 },
@@ -149,7 +149,10 @@ pub fn agent_contract_schema() -> Value {
                     "guardian_public_key": {
                         "anyOf": [{ "$ref": "#/$defs/Bytes" }, { "type": "null" }]
                     },
-                    "signature": { "$ref": "#/$defs/SignatureEnvelope" }
+                    "signature": {
+                        "allOf": [{ "$ref": "#/$defs/SignatureEnvelope" }],
+                        "description": "Guardian approval envelope. domain must equal aether/agent_authorization/v1 and payload_hash must equal the operation policy hash verified by FROST."
+                    }
                 }
             },
             "SettlementPolicy": {
@@ -294,7 +297,10 @@ pub fn agent_contract_schema() -> Value {
                     "chain_id": { "type": "integer", "minimum": 1 },
                     "side_effect": { "$ref": "#/$defs/SideEffect" },
                     "max_replays": { "type": "integer", "minimum": 1, "default": 1 },
-                    "signature": { "$ref": "#/$defs/SignatureEnvelope" }
+                    "signature": {
+                        "allOf": [{ "$ref": "#/$defs/SignatureEnvelope" }],
+                        "description": "Payment authorization envelope. domain must equal aether/payment/v1, chain_id must equal the payment chain_id, and payload_hash must equal PaymentEnvelope.signing_payload_hash."
+                    }
                 }
             }
         }

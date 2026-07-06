@@ -14,6 +14,8 @@ pub mod schema;
 pub use schema::agent_contract_schema;
 
 const DOMAIN_PREFIX: &str = "aether/";
+pub const AGENT_AUTHORIZATION_SIGNATURE_DOMAIN: &str = "aether/agent_authorization/v1";
+pub const PAYMENT_SIGNATURE_DOMAIN: &str = "aether/payment/v1";
 pub const STEP_RECEIPT_SIGNATURE_DOMAIN: &str = "aether/agent_step_receipt/v1";
 pub const STEP_RECEIPT_ENVELOPE_DOMAIN: &str = "aether/agent_step_receipt_envelope/v1";
 
@@ -29,6 +31,8 @@ pub enum AgentSchemaError {
     EmptySignature,
     #[error("signature domain must be {expected}")]
     InvalidSignatureDomain { expected: &'static str },
+    #[error("signature chain_id does not match the signed object")]
+    SignatureChainIdMismatch,
     #[error("signature payload_hash does not match the canonical signing payload")]
     SignaturePayloadHashMismatch,
     #[error("post-quantum signature is required for {0:?}")]
@@ -387,6 +391,11 @@ pub struct AgentAuthorization {
 impl AgentAuthorization {
     pub fn validate(&self, current_slot: Slot) -> Result<(), AgentSchemaError> {
         self.signature.validate()?;
+        if self.signature.domain != AGENT_AUTHORIZATION_SIGNATURE_DOMAIN {
+            return Err(AgentSchemaError::InvalidSignatureDomain {
+                expected: AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
+            });
+        }
         if self.valid_until_slot <= current_slot || self.valid_until_slot <= self.valid_from_slot {
             return Err(AgentSchemaError::Expired);
         }
@@ -410,6 +419,29 @@ impl AgentAuthorization {
             if self.signature.alg != SigningAlgorithm::FrostRistretto255 {
                 return Err(AgentSchemaError::MissingFrostGuardianSignature);
             }
+        }
+        Ok(())
+    }
+
+    /// Validate the object-specific guardian signature envelope binding.
+    ///
+    /// This does not verify the FROST signature bytes. Runtime callers must
+    /// still verify `signature.signature` against `guardian_public_key` over
+    /// the same `expected_payload_hash`. This helper guarantees the envelope
+    /// declares the canonical agent-authorization domain and commits to the
+    /// operation policy hash that the runtime is about to verify.
+    pub fn validate_guardian_signature_binding(
+        &self,
+        expected_payload_hash: H256,
+    ) -> Result<(), AgentSchemaError> {
+        self.signature.validate()?;
+        if self.signature.domain != AGENT_AUTHORIZATION_SIGNATURE_DOMAIN {
+            return Err(AgentSchemaError::InvalidSignatureDomain {
+                expected: AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
+            });
+        }
+        if self.signature.payload_hash != expected_payload_hash {
+            return Err(AgentSchemaError::SignaturePayloadHashMismatch);
         }
         Ok(())
     }
@@ -571,6 +603,29 @@ impl PaymentEnvelope {
             return Err(AgentSchemaError::MissingResultBinding);
         }
         Ok(())
+    }
+
+    /// Validate the object-specific payment signature envelope binding.
+    ///
+    /// This does not verify the Ed25519 signature bytes. Runtime callers must
+    /// still verify `signature.signature` against the authorized session key
+    /// over the returned canonical signing payload hash.
+    pub fn validate_signature_binding(&self) -> Result<H256, AgentSchemaError> {
+        self.signature.validate()?;
+        validate_chain_id(self.chain_id)?;
+        if self.signature.domain != PAYMENT_SIGNATURE_DOMAIN {
+            return Err(AgentSchemaError::InvalidSignatureDomain {
+                expected: PAYMENT_SIGNATURE_DOMAIN,
+            });
+        }
+        if self.signature.chain_id != self.chain_id {
+            return Err(AgentSchemaError::SignatureChainIdMismatch);
+        }
+        let payload_hash = self.signing_payload_hash()?;
+        if self.signature.payload_hash != payload_hash {
+            return Err(AgentSchemaError::SignaturePayloadHashMismatch);
+        }
+        Ok(payload_hash)
     }
 
     pub fn payment_hash(&self) -> Result<H256, AgentSchemaError> {
@@ -1066,7 +1121,7 @@ mod tests {
     fn sig() -> SignatureEnvelope {
         SignatureEnvelope::new(
             SigningAlgorithm::Ed25519,
-            "aether/test/v1",
+            AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
             1,
             "session-key",
             h(7),
@@ -1086,7 +1141,7 @@ mod tests {
     fn sig_json() -> Value {
         json!({
             "alg": "ed25519",
-            "domain": "aether/test/v1",
+            "domain": AGENT_AUTHORIZATION_SIGNATURE_DOMAIN,
             "chain_id": 1,
             "key_id": "session-key",
             "payload_hash": hex(7, 32),
