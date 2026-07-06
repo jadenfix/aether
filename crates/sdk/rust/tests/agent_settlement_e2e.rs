@@ -1,8 +1,9 @@
 use aether_account_abstraction::{AccountValidator, EntryPoint, UserOperation};
+use aether_crypto_primitives::Keypair;
 use aether_program_agent_run_escrow::AgentRunEscrowState;
 use aether_sdk::{
     journal_proof, journal_root_from_receipt_hashes, AgentAuthorization, AgentAuthorizationBuilder,
-    AgentRunId, JournalRoot, PaymentEnvelopeBuilder, SettlementPolicy, SideEffect,
+    AgentRunId, JournalRoot, PaymentEnvelope, PaymentEnvelopeBuilder, SettlementPolicy, SideEffect,
     SignatureEnvelope, SignatureEnvelopeBuilder, SigningAlgorithm, StepKind, StepReceiptBuilder,
 };
 use aether_types::{Address, H256};
@@ -38,6 +39,18 @@ fn signature(domain: &str, payload_hash: H256) -> SignatureEnvelope {
         .key_id("agent-session")
         .payload_hash(payload_hash)
         .signature(vec![7; 64])
+        .build()
+        .unwrap()
+}
+
+fn payment_signature(session_key: &Keypair, payment: &PaymentEnvelope) -> SignatureEnvelope {
+    let payload_hash = payment.signing_payload_hash().unwrap();
+    SignatureEnvelopeBuilder::new()
+        .domain("aether/payment/v1")
+        .chain_id(payment.chain_id)
+        .key_id("agent-session")
+        .payload_hash(payload_hash)
+        .signature(session_key.sign(payload_hash.as_bytes()))
         .build()
         .unwrap()
 }
@@ -92,12 +105,13 @@ fn frost_signature(
 fn authorization(
     sender: Address,
     provider: Address,
+    session_public_key: Vec<u8>,
     guardian_public_key: Vec<u8>,
     guardian_signature: SignatureEnvelope,
 ) -> AgentAuthorization {
     AgentAuthorizationBuilder::new()
         .agent_account(sender)
-        .session_public_key(vec![2; 32])
+        .session_public_key(session_public_key)
         .delegated_by(sender)
         .valid_slots(1, 1_000)
         .spend_limits(10_000, 2_000)
@@ -118,8 +132,9 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
     let sender = addr(1);
     let provider = addr(2);
     let run_id = AgentRunId::new([42; 32]);
+    let session_key = Keypair::generate();
 
-    let payment = PaymentEnvelopeBuilder::new()
+    let unsigned_payment = PaymentEnvelopeBuilder::new()
         .amount(1_500)
         .recipient(provider)
         .quote_hash(h(11))
@@ -129,7 +144,20 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
         .expires_at_slot(1_000)
         .chain_id(1)
         .side_effect(SideEffect::Purchase)
-        .signature(signature("aether/payment/v1", h(15)))
+        .signature(signature("aether/payment/v1", H256::zero()))
+        .build(10)
+        .unwrap();
+    let payment = PaymentEnvelopeBuilder::new()
+        .amount(unsigned_payment.amount)
+        .recipient(unsigned_payment.recipient)
+        .quote_hash(unsigned_payment.quote_hash)
+        .request_hash(unsigned_payment.request_hash)
+        .result_hash(unsigned_payment.result_hash.unwrap())
+        .nonce(unsigned_payment.nonce)
+        .expires_at_slot(unsigned_payment.expires_at_slot)
+        .chain_id(unsigned_payment.chain_id)
+        .side_effect(unsigned_payment.side_effect)
+        .signature(payment_signature(&session_key, &unsigned_payment))
         .build(10)
         .unwrap();
 
@@ -138,6 +166,7 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
     let placeholder_auth = authorization(
         sender,
         provider,
+        session_key.public_key(),
         guardian_public_key.clone(),
         SignatureEnvelopeBuilder::new()
             .algorithm(SigningAlgorithm::FrostRistretto255)
@@ -176,6 +205,7 @@ fn sdk_to_account_abstraction_to_escrow_settlement_flow() {
     op.agent_authorization = Some(authorization(
         sender,
         provider,
+        session_key.public_key(),
         guardian_public_key,
         SignatureEnvelopeBuilder::new()
             .algorithm(SigningAlgorithm::FrostRistretto255)

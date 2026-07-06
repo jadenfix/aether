@@ -44,6 +44,10 @@ pub enum AgentRunEscrowError {
     ZeroChallengeBond,
     #[error("challenge window has not ended")]
     ChallengeWindowActive,
+    #[error("challenge window has ended")]
+    ChallengeWindowEnded,
+    #[error("human confirmation is required before settlement")]
+    HumanConfirmationRequired,
     #[error("run deadline has not passed")]
     DeadlineActive,
     #[error("escrow accounting underflow")]
@@ -94,6 +98,7 @@ pub struct AgentRun {
     pub opened_slot: u64,
     pub deadline_slot: u64,
     pub challenge_end_slot: Option<u64>,
+    pub human_confirmed: bool,
     pub steps: BTreeMap<u64, StepCommitment>,
     pub dispute: Option<Dispute>,
 }
@@ -145,6 +150,7 @@ impl AgentRunEscrowState {
         if provider == requester {
             return Err(AgentRunEscrowError::ProviderIsRequester);
         }
+        let human_confirmed = !policy.requires_human_confirm;
 
         let deadline_slot = current_slot
             .checked_add(deadline_slots)
@@ -163,6 +169,7 @@ impl AgentRunEscrowState {
             opened_slot: current_slot,
             deadline_slot,
             challenge_end_slot: None,
+            human_confirmed,
             steps: BTreeMap::new(),
             dispute: None,
         };
@@ -281,6 +288,30 @@ impl AgentRunEscrowState {
         Ok(())
     }
 
+    pub fn confirm_run(
+        &mut self,
+        run_id: AgentRunId,
+        requester: Address,
+    ) -> Result<(), AgentRunEscrowError> {
+        let run = self
+            .runs
+            .get_mut(&run_id)
+            .ok_or(AgentRunEscrowError::RunNotFound)?;
+        if requester != run.requester {
+            return Err(AgentRunEscrowError::Unauthorized);
+        }
+        if run.status != AgentRunEscrowStatus::Closed
+            && run.status != AgentRunEscrowStatus::NeedsReview
+        {
+            return Err(AgentRunEscrowError::InvalidStatus);
+        }
+        if run.status == AgentRunEscrowStatus::NeedsReview && run.final_journal_root.is_some() {
+            run.status = AgentRunEscrowStatus::Closed;
+        }
+        run.human_confirmed = true;
+        Ok(())
+    }
+
     pub fn dispute_step(
         &mut self,
         run_id: AgentRunId,
@@ -302,6 +333,12 @@ impl AgentRunEscrowState {
             .ok_or(AgentRunEscrowError::RunNotFound)?;
         if run.status != AgentRunEscrowStatus::Closed {
             return Err(AgentRunEscrowError::InvalidStatus);
+        }
+        let challenge_end = run
+            .challenge_end_slot
+            .ok_or(AgentRunEscrowError::InvalidStatus)?;
+        if current_slot > challenge_end {
+            return Err(AgentRunEscrowError::ChallengeWindowEnded);
         }
         if !run.steps.contains_key(&seq) {
             return Err(AgentRunEscrowError::InvalidReceiptSequence);
@@ -344,6 +381,9 @@ impl AgentRunEscrowState {
                 .ok_or(AgentRunEscrowError::InvalidStatus)?;
             if current_slot <= challenge_end {
                 return Err(AgentRunEscrowError::ChallengeWindowActive);
+            }
+            if run.policy.requires_human_confirm && !run.human_confirmed {
+                return Err(AgentRunEscrowError::HumanConfirmationRequired);
             }
             (run.requester, run.provider, run.budget_aic)
         };
@@ -459,6 +499,13 @@ mod tests {
         }
     }
 
+    fn human_confirm_policy() -> SettlementPolicy {
+        SettlementPolicy {
+            requires_human_confirm: true,
+            ..policy()
+        }
+    }
+
     fn open_default(state: &mut AgentRunEscrowState) {
         state
             .open_run(
@@ -533,6 +580,54 @@ mod tests {
             Err(AgentRunEscrowError::InvalidStatus)
         );
         assert_eq!(state.challenger_bonds.get(&addr(9)), Some(&50));
+    }
+
+    #[test]
+    fn late_dispute_after_challenge_window_is_rejected() {
+        let mut state = AgentRunEscrowState::new();
+        open_default(&mut state);
+        state
+            .commit_step(run_id(1), addr(2), 1, h(4), SideEffect::Read, 11)
+            .unwrap();
+        state
+            .close_run(run_id(1), addr(2), JournalRoot(h(5)), h(6), 12)
+            .unwrap();
+
+        assert_eq!(
+            state.dispute_step(run_id(1), 1, addr(9), h(10), 50, 18),
+            Err(AgentRunEscrowError::ChallengeWindowEnded)
+        );
+        assert_eq!(state.settle_run(run_id(1), 18), Ok((addr(2), 1_000)));
+    }
+
+    #[test]
+    fn human_confirm_policy_blocks_settlement_until_requester_confirms() {
+        let mut state = AgentRunEscrowState::new();
+        state
+            .open_run(
+                run_id(1),
+                addr(1),
+                addr(2),
+                1_000,
+                JournalRoot(h(3)),
+                human_confirm_policy(),
+                10,
+                50,
+            )
+            .unwrap();
+        state
+            .commit_step(run_id(1), addr(2), 1, h(4), SideEffect::Read, 11)
+            .unwrap();
+        state
+            .close_run(run_id(1), addr(2), JournalRoot(h(5)), h(6), 12)
+            .unwrap();
+
+        assert_eq!(
+            state.settle_run(run_id(1), 18),
+            Err(AgentRunEscrowError::HumanConfirmationRequired)
+        );
+        state.confirm_run(run_id(1), addr(1)).unwrap();
+        assert_eq!(state.settle_run(run_id(1), 18), Ok((addr(2), 1_000)));
     }
 
     #[test]

@@ -367,6 +367,40 @@ impl PaymentEnvelope {
     pub fn payment_hash(&self) -> Result<H256, AgentSchemaError> {
         typed_hash("aether/agent_payment_envelope/v1", self)
     }
+
+    pub fn signing_payload_hash(&self) -> Result<H256, AgentSchemaError> {
+        typed_hash(
+            "aether/agent_payment_authorization/v1",
+            &PaymentEnvelopeSigningPayload {
+                token: self.token,
+                amount: self.amount,
+                recipient: self.recipient,
+                quote_hash: self.quote_hash,
+                request_hash: self.request_hash,
+                result_hash: self.result_hash,
+                nonce: self.nonce,
+                expires_at_slot: self.expires_at_slot,
+                chain_id: self.chain_id,
+                side_effect: self.side_effect,
+                max_replays: self.max_replays,
+            },
+        )
+    }
+}
+
+#[derive(Serialize)]
+struct PaymentEnvelopeSigningPayload {
+    token: PaymentToken,
+    amount: u128,
+    recipient: Address,
+    quote_hash: H256,
+    request_hash: H256,
+    result_hash: Option<H256>,
+    nonce: [u8; 32],
+    expires_at_slot: Slot,
+    chain_id: u64,
+    side_effect: SideEffect,
+    max_replays: u32,
 }
 
 pub fn typed_hash<T: Serialize>(domain: &str, value: &T) -> Result<H256, AgentSchemaError> {
