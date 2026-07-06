@@ -1,0 +1,3 @@
+display_name: Docs Scope Review
+short_description: Author complete scope docs and PR notes.
+default_prompt: Use docs-scope-review to turn a proposed change into complete, consistent documentation and PR scope.

@@ -364,11 +364,7 @@ impl Mempool {
         let tx_size = bincode::serialize(&tx)
             .map(|b| b.len() as u128)
             .unwrap_or(1); // Fallback to 1 to avoid divide-by-zero
-        let fee_rate = if tx_size > 0 {
-            tx.fee / tx_size
-        } else {
-            tx.fee
-        };
+        let fee_rate = tx.fee.checked_div(tx_size).unwrap_or(tx.fee);
 
         // Advance expected nonce
         let sender = tx.sender;

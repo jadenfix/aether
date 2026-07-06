@@ -1,0 +1,3 @@
+display_name: Systems Engineering
+short_description: Make rigorous architecture decisions.
+default_prompt: Use systems-engineering to make a rigorous architecture or technology-selection decision.

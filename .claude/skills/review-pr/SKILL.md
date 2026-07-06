@@ -9,10 +9,11 @@ You are an independent, non-author reviewer for `jadenfix/aether`. The argument 
 
 ## Ground rules
 
-- **Non-author only.** Check `gh pr view <N> -R jadenfix/aether --json commits -q '.commits[].messageHeadline'` — if you recognize any commit as your own work from this session, stop and hand the review to another agent.
+- **Non-author only.** Check PR author, commit authors, and current-session authorship with `gh pr view <N> -R jadenfix/aether --json author,commits`. If you authored any commit, reviewed your own branch, or are uncertain, stop and hand the review to another agent.
 - Read-only: do not modify the main clone, do not run `cargo` or `scripts/test.sh` in a directory another agent may be building in. CI already builds per-PR; review by reading.
 - Precision: every **blocker** carries a concrete traced failure scenario (specific input/state → specific wrong behavior, with `file:line`). If you cannot trace one, it is a nit.
 - Recall: read the ENTIRE diff, the referenced issues, and the surrounding code of every touched file at current `main`. Bugs live at the seams the diff doesn't show — across 47 crates, the seams dominate.
+- Companion rubrics: for docs/scope PRs, apply `.claude/skills/docs-scope-review/SKILL.md`; for architecture or optimization decisions, apply `.claude/skills/systems-engineering/SKILL.md`; for language, framework, library, runtime, or algorithm choices, apply `.claude/skills/technical-choice/SKILL.md`.
 
 ## Procedure
 
@@ -23,7 +24,7 @@ You are an independent, non-author reviewer for `jadenfix/aether`. The argument 
 5. **Freshness check:** after any wait, force-push, PR body edit, or CI rerun, re-read PR state, head SHA, base SHA, check rollup, and linked issue state.
 6. **Overlap check:** `gh pr list -R jadenfix/aether --state open` — flag open PRs touching the same paths and whether merge order matters.
 7. Hunt for bugs using the method below.
-8. Post the review (format at the bottom) and return a structured verdict.
+8. Return the review body in the fixed format. Post it to GitHub only when the user explicitly asks for a GitHub review action.
 
 ## How to find bugs (do this — don't just tick boxes)
 
@@ -50,6 +51,8 @@ Tests:
 
 Fit & simplicity:
 - [ ] The change does exactly what its issue needs — no speculative abstraction, dead branch, or unused knob; crate-layer direction respected across the workspace.
+- [ ] Architecture and technology choices are switch-worthy: the PR names the baseline, target improvement, rejected alternatives, and smallest proving slice. If not, require the systems-engineering rubric before approving.
+- [ ] Documentation changes reduce ambiguity across the public surfaces they touch; moved docs have correct links and PR scope matches the actual change.
 
 ## aether-specific bug classes (check every one the diff touches)
 
@@ -76,9 +79,9 @@ Adversarial P2P & DA (attacker-chosen bytes):
 TEE/VCR AI-verification lane:
 - [ ] Attestations are verified against expected measurements, never self-reported; a failed or absent attestation fails closed. Verification results entering consensus are deterministic facts (signed artifacts), not re-computed nondeterministically per node.
 
-## Verdict & posting
+## Verdict and posting
 
-Post exactly one review:
+Default to report-only output unless the user explicitly asked you to post a GitHub review. For a GitHub review, post exactly one review:
 
 ```
 gh pr review <N> -R jadenfix/aether --comment --body "<body>"

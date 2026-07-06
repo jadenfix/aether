@@ -1,0 +1,3 @@
+display_name: Technical Choice
+short_description: Choose languages, frameworks, and algorithms.
+default_prompt: Use technical-choice to select a language, framework, dependency, runtime, data structure, or algorithm from explicit constraints.
