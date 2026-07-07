@@ -6,6 +6,7 @@ use aether_sdk::{
     PAYMENT_SIGNATURE_DOMAIN,
 };
 use aether_types::{Address, H256};
+use serde_json::Value;
 
 fn h(byte: u8) -> H256 {
     H256::from([byte; 32])
@@ -44,6 +45,10 @@ fn payment() -> PaymentEnvelope {
     }
 }
 
+fn conformance_fixture() -> Value {
+    serde_json::from_str(include_str!("../../../../fixtures/agent-payment-v1.json")).unwrap()
+}
+
 #[test]
 fn rust_payment_hash_matches_typescript_golden_vector() {
     let payment = payment();
@@ -55,6 +60,48 @@ fn rust_payment_hash_matches_typescript_golden_vector() {
     assert_eq!(
         payment_envelope_hash(&payment).unwrap(),
         "0x0831ce74c89358835be790d4a7794a2bb30cd7e5968bafb5cc99423ea5f25783"
+    );
+}
+
+#[test]
+fn rust_payment_matches_shared_agent_payment_fixture() {
+    let fixture = conformance_fixture();
+    let payment: PaymentEnvelope = serde_json::from_value(fixture["payment"].clone()).unwrap();
+    let expected = &fixture["expected"];
+
+    assert_eq!(
+        format!("{:?}", payment.signing_payload_hash().unwrap()),
+        expected["signing_payload_hash"].as_str().unwrap()
+    );
+    assert_eq!(
+        payment_envelope_hash(&payment).unwrap(),
+        expected["payment_hash"].as_str().unwrap()
+    );
+    assert_eq!(
+        encode_payment_header(&payment).unwrap(),
+        expected["payment_header"].as_str().unwrap()
+    );
+
+    let headers = payment_headers(&payment).unwrap();
+    assert_eq!(
+        headers
+            .get(expected["payment_header_name"].as_str().unwrap())
+            .map(String::as_str),
+        expected["payment_header"].as_str()
+    );
+    assert_eq!(
+        headers
+            .get(expected["payment_hash_header_name"].as_str().unwrap())
+            .map(String::as_str),
+        expected["payment_hash_header"].as_str()
+    );
+    assert_eq!(
+        decode_payment_header_with_hash(
+            expected["payment_header"].as_str().unwrap(),
+            expected["payment_hash_header"].as_str().unwrap(),
+        )
+        .unwrap(),
+        payment
     );
 }
 
