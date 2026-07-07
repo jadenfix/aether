@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { test } from "node:test";
 
 import { getPublicKey, sign } from "@noble/ed25519";
@@ -20,6 +22,18 @@ import {
   typedJsonHash,
   verifyPaymentEnvelopeSignature,
 } from "../src/index.js";
+
+type AgentPaymentFixture = {
+  payment: ReturnType<typeof signedPayment>;
+  expected: {
+    signing_payload_hash: string;
+    payment_hash: string;
+    payment_header_name: string;
+    payment_hash_header_name: string;
+    payment_header: string;
+    payment_hash_header: string;
+  };
+};
 
 const h = (byte: string) => `0x${byte.repeat(64)}` as const;
 const addr = (byte: string) => `0x${byte.repeat(40)}` as const;
@@ -52,6 +66,12 @@ function signedPayment() {
     keyId: "agent-session-ed25519",
     signature: `0x${"aa".repeat(64)}`,
   });
+}
+
+function conformanceFixture(): AgentPaymentFixture {
+  return JSON.parse(
+    readFileSync(resolve(process.cwd(), "../../fixtures/agent-payment-v1.json"), "utf8"),
+  ) as AgentPaymentFixture;
 }
 
 test("canonical JSON and typed hashes are deterministic", () => {
@@ -105,6 +125,21 @@ test("payment signing payload excludes signature and changes on settlement field
     }),
     baseline,
   );
+});
+
+test("payment envelope matches shared Rust/TypeScript conformance fixture", () => {
+  const fixture = conformanceFixture();
+
+  assert.equal(paymentSigningPayloadHash(fixture.payment), fixture.expected.signing_payload_hash);
+  assert.equal(paymentEnvelopeHash(fixture.payment), fixture.expected.payment_hash);
+  assert.equal(paymentHeaders(fixture.payment)[AETHER_PAYMENT_HEADER], fixture.expected.payment_header);
+  assert.equal(
+    paymentHeaders(fixture.payment)[AETHER_PAYMENT_HASH_HEADER],
+    fixture.expected.payment_hash_header,
+  );
+  assert.equal(fixture.expected.payment_header_name, AETHER_PAYMENT_HEADER);
+  assert.equal(fixture.expected.payment_hash_header_name, AETHER_PAYMENT_HASH_HEADER);
+  assert.deepEqual(decodePaymentHeader(fixture.expected.payment_header), fixture.payment);
 });
 
 test("payment validation rejects non-canonical signature domains", () => {
