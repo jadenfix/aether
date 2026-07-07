@@ -38,6 +38,10 @@ job-related program logic, proof validation, and downstream tooling.
 - `sdks/`, `apps/`, and `packages/`: SDK and web-client layers.
 
 The JSON-RPC server currently binds to `127.0.0.1` by default and exposes `/health`, POST JSON-RPC, and `/ws`.
+The committed machine-readable public interface manifest is
+[`docs/public-interface-manifest.json`](public-interface-manifest.json); run
+`python3 scripts/check-public-interface-manifest.py` after changing JSON-RPC,
+health, WebSocket, SDK, job-submission, or CLI surfaces.
 
 ### Node Core
 
