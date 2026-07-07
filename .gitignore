@@ -11,6 +11,9 @@
 *.swo
 *~
 
+# Local agent overlays
+AGENTS.md
+
 # OS
 .DS_Store
 Thumbs.db
