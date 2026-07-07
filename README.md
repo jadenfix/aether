@@ -123,6 +123,12 @@ curl -s http://127.0.0.1:8545 \
   -d '{"jsonrpc":"2.0","method":"aeth_getSlotNumber","params":[],"id":1}'
 ```
 
+The machine-readable public interface manifest for JSON-RPC, `/health`, `/ws`,
+SDK job submission, and `aetherctl` lives at
+[`docs/public-interface-manifest.json`](docs/public-interface-manifest.json).
+Run `python3 scripts/check-public-interface-manifest.py` after changing those
+surfaces.
+
 ### Run a Local Devnet (4 Validators)
 
 ```bash

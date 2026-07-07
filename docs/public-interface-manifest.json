@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "service": "aether",
+  "product_role": "arrha-settlement-chain",
+  "default_base_url": "http://127.0.0.1:8545",
+  "source_of_truth": {
+    "json_rpc_server": "crates/rpc/json-rpc/src/server.rs",
+    "typescript_sdk": "sdks/typescript/src/client.ts",
+    "python_sdk": "sdks/python/src/aether_sdk/client.py",
+    "rust_sdk": "crates/sdk/rust/src/client.rs",
+    "cli": "crates/tools/cli/src/main.rs"
+  },
+  "transports": [
+    {
+      "name": "json-rpc",
+      "protocol": "JSON-RPC 2.0",
+      "endpoint": {
+        "method": "POST",
+        "path": "/"
+      },
+      "content_type": "application/json",
+      "auth": {
+        "scheme": "none",
+        "notes": "Current local/devnet JSON-RPC server has no HTTP auth layer."
+      },
+      "methods": [
+        {
+          "name": "aeth_sendRawTransaction",
+          "sdk_exposed": false,
+          "summary": "Submit a signed raw transaction payload."
+        },
+        {
+          "name": "aeth_sendTransaction",
+          "sdk_exposed": true,
+          "summary": "Submit an SDK-friendly transfer transaction payload."
+        },
+        {
+          "name": "aeth_chainId",
+          "sdk_exposed": false,
+          "summary": "Return the configured chain id as a hex string."
+        },
+        {
+          "name": "aeth_getBlockByNumber",
+          "sdk_exposed": true,
+          "summary": "Fetch a block by slot number or latest reference."
+        },
+        {
+          "name": "aeth_getBlockByHash",
+          "sdk_exposed": true,
+          "summary": "Fetch a block by hash."
+        },
+        {
+          "name": "aeth_getTransactionReceipt",
+          "sdk_exposed": true,
+          "summary": "Fetch a transaction receipt by transaction hash."
+        },
+        {
+          "name": "aeth_getStateRoot",
+          "sdk_exposed": true,
+          "summary": "Fetch the state root for a block reference or latest state."
+        },
+        {
+          "name": "aeth_getAccount",
+          "sdk_exposed": true,
+          "summary": "Fetch account state."
+        },
+        {
+          "name": "aeth_getSlotNumber",
+          "sdk_exposed": true,
+          "summary": "Return the current slot number."
+        },
+        {
+          "name": "aeth_getFinalizedSlot",
+          "sdk_exposed": true,
+          "summary": "Return the last finalized slot."
+        },
+        {
+          "name": "aeth_requestAirdrop",
+          "sdk_exposed": false,
+          "summary": "Request a devnet airdrop."
+        },
+        {
+          "name": "aeth_health",
+          "sdk_exposed": false,
+          "summary": "Return node health through JSON-RPC."
+        }
+      ]
+    },
+    {
+      "name": "http-health",
+      "protocol": "HTTP JSON",
+      "endpoint": {
+        "method": "GET",
+        "path": "/health"
+      },
+      "sdk_methods": {
+        "typescript": "getHealth",
+        "python": "get_health",
+        "cli": "aetherctl status"
+      },
+      "response_fields": [
+        "status",
+        "version",
+        "latestSlot",
+        "finalizedSlot",
+        "peerCount",
+        "sync"
+      ]
+    },
+    {
+      "name": "websocket-subscriptions",
+      "protocol": "WebSocket",
+      "endpoint": {
+        "method": "GET",
+        "path": "/ws"
+      },
+      "sdk_methods": {
+        "typescript": "AetherSubscription.connect"
+      },
+      "topics": [
+        "newBlock",
+        "finality"
+      ]
+    },
+    {
+      "name": "job-submission",
+      "protocol": "HTTP JSON",
+      "endpoint": {
+        "method": "POST",
+        "path": "/v1/jobs"
+      },
+      "implementation_status": "prepared-by-sdk-and-cli",
+      "notes": "Current SDKs and aetherctl prepare/post this public job-submission payload; it is tracked here until the serving route is generated or documented elsewhere.",
+      "request_fields": [
+        "jobId/job_id",
+        "modelHash/model_hash",
+        "inputHash/input_hash",
+        "maxFee/max_fee",
+        "expiresAt/expires_at",
+        "metadata"
+      ],
+      "sdk_methods": {
+        "typescript": "prepareJobSubmission, JobBuilder.toSubmission",
+        "python": "prepare_job_submission, JobBuilder.to_submission",
+        "rust": "prepare_job_submission, JobBuilder::to_submission",
+        "cli": "aetherctl job post"
+      }
+    }
+  ],
+  "sdks": [
+    {
+      "language": "typescript",
+      "package_path": "sdks/typescript",
+      "client": "AetherClient",
+      "config": [
+        "endpoint",
+        "defaultFee",
+        "defaultGasLimit",
+        "requestTimeoutMs"
+      ]
+    },
+    {
+      "language": "python",
+      "package_path": "sdks/python",
+      "client": "AetherClient",
+      "config": [
+        "endpoint",
+        "default_fee",
+        "default_gas_limit"
+      ]
+    },
+    {
+      "language": "rust",
+      "package_path": "crates/sdk/rust",
+      "client": "AetherClient",
+      "config": [
+        "endpoint",
+        "default_fee",
+        "default_gas_limit",
+        "request_timeout_secs"
+      ]
+    }
+  ],
+  "cli": {
+    "binary": "aetherctl",
+    "global_flags": [
+      "--config"
+    ],
+    "config_file": "~/.aether/config.toml",
+    "commands": [
+      "status",
+      "keys generate",
+      "keys show",
+      "transfer",
+      "stake delegate",
+      "stake withdraw",
+      "job post",
+      "job tutorial"
+    ]
+  }
+}
